@@ -85,6 +85,7 @@ int main(void)
     p.command = 0xc7; p.length = 9; p.payload[8] = 17;
     assert(!transferCommand(&t, &s, &folder, &p, &handled));
     assert(sentLength == 1 && sent[0] == 0);
+    assert(!strcmp(t.imageName, "test.po"));
     ack(&t, &s, 6, 0);
     assert(!transferPoll(&t, &s)); assert(readStart == 0 && readBlocks == 17);
     ack(&t, &s, 0x15, 0);

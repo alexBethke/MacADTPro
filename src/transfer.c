@@ -134,6 +134,8 @@ OSErr transferCommand(ImageTransfer *t, SerialConnection *s,
         error = transferCancel(t);
         return error ? error : serialSend(s, reply + 2, 1);
     }
+    memcpy(t->imageName, name + 1, name[0]);
+    t->imageName[name[0]] = 0;
     t->preferred = p->payload[end + 1];
     /* Client advances by its BAOCNT, not by the payload's actual length. */
     t->block = t->chunk = 0;

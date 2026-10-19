@@ -10,6 +10,7 @@ typedef struct {
     unsigned short packetLength, block, chunk, preferred;
     short state, retries;
     unsigned long lastActivity;
+    char imageName[32];
     char retryReason[64];
     char message[128];
 } ImageTransfer;

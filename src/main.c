@@ -80,6 +80,7 @@ static pascal void drawDefaultButton(DialogPtr dialog, short item)
     Rect bounds;
     GetDialogItem(dialog, buttonItem, &type, &handle, &bounds);
     InsetRect(&bounds, -4, -4);
+    PenNormal();
     PenSize(3, 3);
     FrameRoundRect(&bounds, 16, 16);
     PenNormal();
@@ -105,7 +106,7 @@ static pascal void drawAboutText(DialogPtr dialog, short item)
         "Classic Macintosh host for ADTPro disk image transfers. "
         "This application runs on any Macintosh with a 68020 or better CPU "
         "and System 7.0 or later. It is not affiliated with the MacADT app, "
-        "provided as-is, without warranty of any kind. Use at your own risk.";
+        "provided as-is, without warranty of any kind. Use at your own risk. Built and provided in 2026 by Alex ADB.";
     GrafPtr savedPort;
     short type;
     Handle handle;
@@ -140,22 +141,35 @@ static void installAboutText(DialogPtr dialog)
     DrawDialog(dialog);
 }
 
-static void showAbout(void)
+static void showAbout(DialogPtr mainDialog, Boolean connectEnabled)
 {
+    WindowPtr previous = FrontWindow();
     DialogPtr about = GetNewDialog(129, 0, (WindowPtr)-1);
+    short type;
+    Handle handle;
+    Rect bounds;
     short item = 0;
     if (!about) return;
     installAboutText(about);
     while (item != 1) ModalDialog(0, &item);
     DisposeDialog(about);
+    if (previous) {
+        SelectWindow(previous);
+        SetPort((GrafPtr)previous);
+    }
+    GetDialogItem(mainDialog, 13, &type, &handle, &bounds);
+    HiliteControl((ControlHandle)handle, connectEnabled ? 0 : 255);
+    SetPort((GrafPtr)mainDialog);
+    drawDefaultButton(mainDialog, 18);
 }
 
-static short handleMenu(long choice)
+static short handleMenu(long choice, DialogPtr mainDialog, Boolean connectEnabled)
 {
     short menu = (short)(choice >> 16);
     short item = (short)choice;
     short action = kMenuNone;
-    if (menu == kAppleMenu && item == kAboutItem) showAbout();
+    if (menu == kAppleMenu && item == kAboutItem)
+        showAbout(mainDialog, connectEnabled);
     else if (menu == kFileMenu && item == kPreferencesItem) action = kMenuPreferences;
     else if (menu == kFileMenu && item == kQuitItem) action = kMenuQuit;
     HiliteMenu(0);
@@ -174,11 +188,24 @@ static void setControl(DialogPtr dialog, short item, short value)
 
 static OSErr refreshFolderList(DialogPtr dialog, const ImageFolder *folder)
 {
-    unsigned i;
+    static unsigned char refreshedNames[kVisibleFiles][32];
+    unsigned refreshedCount, i;
+    Boolean refreshedHasMore, changed;
     Cell cell;
-    OSErr error = directoryFolderItems(folder, folderNames, kVisibleFiles,
-                                       &folderNameCount, &folderHasMore);
+    OSErr error = directoryFolderItems(folder, refreshedNames, kVisibleFiles,
+                                       &refreshedCount, &refreshedHasMore);
     if (error) return error;
+    changed = refreshedCount != folderNameCount ||
+              refreshedHasMore != folderHasMore;
+    for (i = 0; !changed && i < refreshedCount; ++i)
+        changed = refreshedNames[i][0] != folderNames[i][0] ||
+            memcmp(refreshedNames[i] + 1, folderNames[i] + 1,
+                   refreshedNames[i][0]);
+    if (!changed) return noErr;
+    folderNameCount = refreshedCount;
+    folderHasMore = refreshedHasMore;
+    for (i = 0; i < folderNameCount; ++i)
+        memcpy(folderNames[i], refreshedNames[i], refreshedNames[i][0] + 1);
     if (!folderList) return noErr;
     SetPort((GrafPtr)dialog);
     LSetDrawingMode(false, folderList);
@@ -349,6 +376,100 @@ static void setText(DialogPtr dialog, short item, const char *text)
     }
 }
 
+static void setTransferStatus(DialogPtr dialog, const ImageTransfer *transfer)
+{
+    char text[256];
+    if (transfer->state && transfer->imageName[0]) {
+        snprintf(text, sizeof(text), "%s\r%s", transfer->imageName, transfer->message);
+        setText(dialog, 12, text);
+    } else {
+        setText(dialog, 12, transfer->message);
+    }
+}
+
+static void drawPreferenceGeneva(DialogPtr dialog)
+{
+    static const short controls[] = {4, 5, 7, 8, 9, 10, 11};
+    static const char *labels[] = {
+        "Modem", "Printer", "300", "1200", "2400", "9600", "19200"
+    };
+    static const char help[] =
+        "Choose the port and speed used by the Apple II. The cable option enables hardware handshaking.";
+    GrafPtr savedPort;
+    short i, type;
+    Handle handle;
+    Rect bounds;
+    GetPort(&savedPort);
+    SetPort((GrafPtr)dialog);
+    TextFont(kFontIDGeneva);
+    TextSize(9);
+    TextFace(0);
+    for (i = 0; i < (short)(sizeof(controls) / sizeof(controls[0])); ++i) {
+        GetDialogItem(dialog, controls[i], &type, &handle, &bounds);
+        bounds.left += 18;
+        EraseRect(&bounds);
+        MoveTo(bounds.left + 2, bounds.top + 12);
+        DrawText(labels[i], 0, strlen(labels[i]));
+    }
+    GetDialogItem(dialog, 13, &type, &handle, &bounds);
+    EraseRect(&bounds);
+    TETextBox(help, sizeof(help) - 1, &bounds, teJustLeft);
+    TextFont(systemFont);
+    TextSize(12);
+    SetPort(savedPort);
+}
+
+enum {
+    kPreferencesWidth = 360,
+    kPreferencesHeight = 244,
+    kPreferencesRowBytes = ((kPreferencesWidth + 15) / 16) * 2
+};
+static short preferencesPixels[kPreferencesRowBytes * kPreferencesHeight / 2];
+static BitMap preferencesBits;
+
+static Boolean renderPreferencesOffscreen(DialogPtr dialog)
+{
+    GrafPtr port = (GrafPtr)dialog;
+    BitMap windowBits = port->portBits;
+    RgnHandle savedVisible = NewRgn();
+    RgnHandle savedClip = NewRgn();
+    Rect bounds;
+    if (!savedVisible || !savedClip) {
+        if (savedVisible) DisposeRgn(savedVisible);
+        if (savedClip) DisposeRgn(savedClip);
+        return false;
+    }
+    bounds = port->portRect;
+    CopyRgn(port->visRgn, savedVisible);
+    CopyRgn(port->clipRgn, savedClip);
+    preferencesBits.baseAddr = (Ptr)preferencesPixels;
+    preferencesBits.rowBytes = kPreferencesRowBytes;
+    SetRect(&preferencesBits.bounds, 0, 0,
+            kPreferencesWidth, kPreferencesHeight);
+    SetPort(port);
+    SetPortBits(&preferencesBits);
+    RectRgn(port->visRgn, &bounds);
+    RectRgn(port->clipRgn, &bounds);
+    EraseRect(&bounds);
+    DrawDialog(dialog);
+    drawPreferenceGeneva(dialog);
+    SetPortBits(&windowBits);
+    CopyRgn(savedVisible, port->visRgn);
+    CopyRgn(savedClip, port->clipRgn);
+    DisposeRgn(savedVisible);
+    DisposeRgn(savedClip);
+    return true;
+}
+
+static void copyPreferencesToWindow(DialogPtr dialog)
+{
+    GrafPtr port = (GrafPtr)dialog;
+    Rect bounds = port->portRect;
+    SetPort(port);
+    CopyBits(&preferencesBits, &port->portBits,
+             &preferencesBits.bounds, &bounds, srcCopy, 0);
+}
+
 static void enableSettings(DialogPtr dialog, short enabled)
 {
     static const short items[] = {4, 5, 7, 8, 9, 10, 11, 12};
@@ -359,6 +480,7 @@ static void enableSettings(DialogPtr dialog, short enabled)
         GetDialogItem(dialog, items[i], &type, &handle, &bounds);
         HiliteControl((ControlHandle)handle, enabled ? 0 : 255);
     }
+    drawPreferenceGeneva(dialog);
 }
 
 static void setPreferenceControls(DialogPtr dialog, const Configuration *config)
@@ -368,6 +490,7 @@ static void setPreferenceControls(DialogPtr dialog, const Configuration *config)
     setControl(dialog, 5, config->printerPort);
     for (i = 0; i < 5; ++i) setControl(dialog, 7 + i, config->baudIndex == i);
     setControl(dialog, 12, config->imageWriterCable);
+    drawPreferenceGeneva(dialog);
 }
 
 /* Always attempt both cleanup operations; file errors must not retain a port. */
@@ -470,7 +593,8 @@ int main(void)
             if (event.what == activateEvt && (WindowPtr)event.message == (WindowPtr)dialog &&
                 !(event.modifiers & activeFlag)) LActivate(false, folderList);
             if (event.what == keyDown && (event.modifiers & cmdKey)) {
-                menuAction = handleMenu(MenuKey(event.message & charCodeMask));
+                menuAction = handleMenu(MenuKey(event.message & charCodeMask),
+                                        dialog, !folderError);
                 dispatchDialog = false;
             } else if (event.what == keyDown &&
                        ((event.message & charCodeMask) == '\r' ||
@@ -488,7 +612,8 @@ int main(void)
                 WindowPtr clickedWindow;
                 short part = FindWindow(event.where, &clickedWindow);
                 if (part == inMenuBar) {
-                    menuAction = handleMenu(MenuSelect(event.where));
+                    menuAction = handleMenu(MenuSelect(event.where),
+                                            dialog, !folderError);
                     dispatchDialog = false;
                 }
                 if (part == inGoAway && clickedWindow == (WindowPtr)dialog) {
@@ -554,6 +679,19 @@ int main(void)
                 EndUpdate((WindowPtr)dialog);
                 dispatchDialog = false;
             }
+            if (event.what == updateEvt &&
+                (WindowPtr)event.message == (WindowPtr)preferences) {
+                SetPort((GrafPtr)preferences);
+                BeginUpdate((WindowPtr)preferences);
+                if (renderPreferencesOffscreen(preferences))
+                    copyPreferencesToWindow(preferences);
+                else {
+                    DrawDialog(preferences);
+                    drawPreferenceGeneva(preferences);
+                }
+                EndUpdate((WindowPtr)preferences);
+                dispatchDialog = false;
+            }
             if (dispatchDialog && IsDialogEvent(&event)) DialogSelect(&event, &eventDialog, &item);
         }
         if (closePreferences) {
@@ -569,6 +707,15 @@ int main(void)
                     installDefaultButton(preferences, 14);
                     setPreferenceControls(preferences, &preferenceDraft);
                     enableSettings(preferences, !connected);
+                    if (renderPreferencesOffscreen(preferences)) {
+                        ShowWindow((WindowPtr)preferences);
+                        copyPreferencesToWindow(preferences);
+                        ValidRect(&((GrafPtr)preferences)->portRect);
+                    } else {
+                        ShowWindow((WindowPtr)preferences);
+                        DrawDialog(preferences);
+                        drawPreferenceGeneva(preferences);
+                    }
                 }
             } else SelectWindow((WindowPtr)preferences);
         }
@@ -657,7 +804,7 @@ int main(void)
                             if (error) break;
                             if (handled) {
                                 awaitingDirectory = false;
-                                setText(dialog, 12, transfer.message);
+                                setTransferStatus(dialog, &transfer);
                                 if (wasActive && !transfer.state) {
                                     error = releaseConnection(&serial, &transfer);
                                     connected = false;
@@ -674,7 +821,7 @@ int main(void)
                             if (transfer.state) {
                                 /* Unexpected/noisy commands must not end an image transfer. */
                                 error = transferRetry(&transfer);
-                                setText(dialog, 12, transfer.message);
+                                setTransferStatus(dialog, &transfer);
                                 if (error || !transfer.state) break;
                                 continue;
                             }
@@ -729,7 +876,7 @@ int main(void)
                     } else if (result == WIDE_BAD_HEADER || result == WIDE_BAD_PAYLOAD) {
                         if (transfer.state) {
                             error = transferRetry(&transfer);
-                            setText(dialog, 12, transfer.message);
+                            setTransferStatus(dialog, &transfer);
                             if (error || !transfer.state) {
                                 OSErr cleanupError = releaseConnection(&serial, &transfer);
                                 connected = false;
@@ -764,7 +911,7 @@ int main(void)
                     wideReset(&parser);
                     if (transfer.state) {
                         error = transferRetry(&transfer);
-                        setText(dialog, 12, transfer.message);
+                        setTransferStatus(dialog, &transfer);
                         if (!error && transfer.state) continue;
                     }
                     error = releaseConnection(&serial, &transfer);
@@ -794,7 +941,7 @@ int main(void)
                     error = transferPoll(&transfer, &serial);
                     /* Discard any incomplete stale envelope before a new packet ACK. */
                     if (!wasWriting && serial.writing) wideReset(&parser);
-                    if (strcmp(previous, transfer.message)) setText(dialog, 12, transfer.message);
+                    if (strcmp(previous, transfer.message)) setTransferStatus(dialog, &transfer);
                     if (error || !transfer.state) {
                         { OSErr cleanupError = releaseConnection(&serial, &transfer);
                           if (cleanupError) error = cleanupError; }
