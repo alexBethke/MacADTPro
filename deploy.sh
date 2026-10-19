@@ -1,0 +1,1 @@
+/Users/alex/Git/Retro68-build/toolchain/bin/LaunchAPPL -e tcp --tcp-address 192.168.7.231 build/MacADTPro.bin
