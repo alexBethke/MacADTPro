@@ -51,20 +51,50 @@ resource 'MENU' (129) {
     }
 };
 
+resource 'MENU' (130) {
+    130, textMenuProc;
+    allEnabled, enabled;
+    "Bootstrap";
+    {
+        "Load ADTPro 2.1.0 into memory...", noIcon, noKey, noMark, plain;
+    }
+};
+
 resource 'MBAR' (128) {
-    { 128, 129 };
+    { 128, 129, 130 };
+};
+
+resource 'DLOG' (131) {
+    {10, 58, 370, 422}, dBoxProc, visible, noGoAway, 0, 131,
+    "Serial Bootstrap", centerMainScreen
+};
+
+resource 'DITL' (131) {
+    {
+        {328, 264, 350, 344}, Button {enabled, "Send"};
+        {328, 168, 350, 248}, Button {enabled, "Cancel"};
+        {14, 18, 104, 346}, StaticText {disabled,
+            "1. Connect the serial cable. In Preferences select the Macintosh port and cable type.\r\r2. Start the Apple II without loading a disk. Press Control-Reset to reach the ] prompt."};
+        {106, 18, 218, 346}, StaticText {disabled,
+            "3. Type IN#2 and Return (use the serial card's slot; IIc/IIgs modem is slot 2).\r\r4. Press Control-A. At APPLE SSC: or blinking ?, type 14B. Press Return for an SSC."};
+        {200, 18, 312, 346}, StaticText {disabled,
+            "5. Click Send and wait for all three stages (9600 then automatic 19200).\r\r6. In ADTPro, format a blank disk, then Receive ADTPRO-2.1.0.DSK to make the boot disk."};
+        {0, 0, 0, 0}, StaticText {disabled, ""};
+    }
 };
 
 resource 'DLOG' (129) {
-    {80, 86, 246, 406}, dBoxProc, visible, noGoAway, 0, 129,
+    {80, 86, 246, 406}, dBoxProc, invisible, noGoAway, 0, 129,
     "About MacADT Pro", centerMainScreen
 };
 
 resource 'DITL' (129) {
     {
-        {130, 224, 152, 296}, Button {enabled, "OK"};
+        {130, 174, 152, 306}, Button {enabled, "Apple ][ forever!"};
         /* Replaced with mixed-font drawing code after GetNewDialog. */
         {18, 20, 118, 300}, StaticText {disabled, ""};
+        /* Replaced with the default-button frame before the dialog is shown. */
+        {0, 0, 0, 0}, StaticText {disabled, ""};
     }
 };
 

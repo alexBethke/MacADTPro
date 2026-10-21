@@ -12,7 +12,9 @@
 #include <Resources.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include "serial.h"
+#include "bootstrap.h"
 #include "wide.h"
 #include "image_folder.h"
 #include "directory.h"
@@ -29,12 +31,14 @@ typedef struct {
 enum {
     kAppleMenu = 128,
     kFileMenu = 129,
+    kBootstrapMenu = 130,
     kAboutItem = 1,
     kPreferencesItem = 1,
     kQuitItem = 3,
     kMenuNone = 0,
     kMenuQuit = 1,
-    kMenuPreferences = 2
+    kMenuPreferences = 2,
+    kMenuBootstrap = 3
 };
 
 enum { kVisibleFiles = 128 };
@@ -42,6 +46,9 @@ static unsigned char folderNames[kVisibleFiles][32];
 static unsigned folderNameCount;
 static Boolean folderHasMore;
 static ListHandle folderList;
+static char highlightedImage[32];
+
+static void selectFolderImage(DialogPtr dialog, const char *name);
 
 static void drawRainbowInRect(const Rect *bounds)
 {
@@ -138,7 +145,6 @@ static void installAboutText(DialogPtr dialog)
     GetDialogItem(dialog, 2, &type, &handle, &bounds);
     SetDialogItem(dialog, 2, userItem | itemDisable,
                   (Handle)NewUserItemUPP(drawAboutText), &bounds);
-    DrawDialog(dialog);
 }
 
 static void showAbout(DialogPtr mainDialog, Boolean connectEnabled)
@@ -151,6 +157,9 @@ static void showAbout(DialogPtr mainDialog, Boolean connectEnabled)
     short item = 0;
     if (!about) return;
     installAboutText(about);
+    installDefaultButton(about, 3);
+    ShowWindow((WindowPtr)about);
+    DrawDialog(about);
     while (item != 1) ModalDialog(0, &item);
     DisposeDialog(about);
     if (previous) {
@@ -172,8 +181,21 @@ static short handleMenu(long choice, DialogPtr mainDialog, Boolean connectEnable
         showAbout(mainDialog, connectEnabled);
     else if (menu == kFileMenu && item == kPreferencesItem) action = kMenuPreferences;
     else if (menu == kFileMenu && item == kQuitItem) action = kMenuQuit;
+    else if (menu == kBootstrapMenu && item == 1) action = kMenuBootstrap;
     HiliteMenu(0);
     return action;
+}
+
+static Boolean confirmBootstrap(void)
+{
+    DialogPtr dialog = GetNewDialog(131, 0, (WindowPtr)-1);
+    short item = 0;
+    if (!dialog) return false;
+    installDefaultButton(dialog, 6);
+    DrawDialog(dialog);
+    while (item != 1 && item != 2) ModalDialog(0, &item);
+    DisposeDialog(dialog);
+    return item == 1;
 }
 
 static void setControl(DialogPtr dialog, short item, short value)
@@ -227,6 +249,7 @@ static OSErr refreshFolderList(DialogPtr dialog, const ImageFolder *folder)
     TextSize(9);
     LUpdate(((WindowPtr)dialog)->visRgn, folderList);
     frameFolderList();
+    if (highlightedImage[0]) selectFolderImage(dialog, highlightedImage);
     TextFont(systemFont);
     TextSize(12);
     return noErr;
@@ -251,6 +274,36 @@ static Boolean initFolderList(DialogPtr dialog)
     TextFont(systemFont);
     TextSize(12);
     return folderList != 0;
+}
+
+static void selectFolderImage(DialogPtr dialog, const char *name)
+{
+    Cell cell;
+    unsigned i, j, length = strlen(name);
+    if (!folderList) return;
+    SetPort((GrafPtr)dialog);
+    TextFont(kFontIDGeneva);
+    TextSize(9);
+    for (i = 0; i < folderNameCount; ++i) {
+        Boolean matches = folderNames[i][0] == length;
+        for (j = 0; matches && j < length; ++j)
+            matches = toupper((unsigned char)folderNames[i][j + 1]) ==
+                      toupper((unsigned char)name[j]);
+        cell.h = 0;
+        cell.v = i;
+        LSetSelect(matches, cell, folderList);
+    }
+    TextFont(systemFont);
+    TextSize(12);
+}
+
+static void highlightFolderImage(DialogPtr dialog, const char *name)
+{
+    size_t length = strlen(name);
+    if (length >= sizeof(highlightedImage)) length = sizeof(highlightedImage) - 1;
+    memcpy(highlightedImage, name, length);
+    highlightedImage[length] = 0;
+    selectFolderImage(dialog, highlightedImage);
 }
 
 static unsigned char statusValues[3][256];
@@ -347,6 +400,45 @@ static void initStatusDrawing(DialogPtr dialog)
     statusDrawingReady = true;
 }
 
+static void setActionButton(DialogPtr dialog, const unsigned char *title)
+{
+    enum { kActionButtonRight = 364, kActionButtonWidth = 94,
+           kBootstrapButtonWidth = 132 };
+    static const unsigned char cancelBootstrap[] =
+        {16, 'C','a','n','c','e','l',' ','B','o','o','t','s','t','r','a','p'};
+    short type, width;
+    Handle handle, frameHandle;
+    Rect oldBounds, oldFrame, bounds, dirty, frame;
+    GetDialogItem(dialog, 13, &type, &handle, &oldBounds);
+    width = title[0] == cancelBootstrap[0] &&
+            !memcmp(title + 1, cancelBootstrap + 1, cancelBootstrap[0])
+            ? kBootstrapButtonWidth : kActionButtonWidth;
+    bounds = oldBounds;
+    bounds.left = kActionButtonRight - width;
+    bounds.right = kActionButtonRight;
+    GetDialogItem(dialog, 18, &type, &frameHandle, &oldFrame);
+    dirty = oldFrame;
+    UnionRect(&dirty, &oldBounds, &dirty);
+    UnionRect(&dirty, &bounds, &dirty);
+    SetPort((GrafPtr)dialog);
+    EraseRect(&dirty);
+    MoveControl((ControlHandle)handle, bounds.left, bounds.top);
+    SizeControl((ControlHandle)handle, width, bounds.bottom - bounds.top);
+    SetControlTitle((ControlHandle)handle, title);
+    frame = bounds;
+    InsetRect(&frame, -4, -4);
+    UnionRect(&dirty, &frame, &dirty);
+    EraseRect(&dirty);
+    SetDialogItem(dialog, 18, userItem | itemDisable, frameHandle, &frame);
+    /* The button sits over the picture, so restore that background before
+       drawing the resized control and a fresh, uniformly black outline. */
+    drawRainbow(dialog);
+    drawStatus(dialog, 12);
+    drawStatus(dialog, 15);
+    Draw1Control((ControlHandle)handle);
+    drawDefaultButton(dialog, 18);
+}
+
 static void setText(DialogPtr dialog, short item, const char *text)
 {
     short type;
@@ -368,8 +460,10 @@ static void setText(DialogPtr dialog, short item, const char *text)
     if ((type & 0x7f) >= ctrlItem && (type & 0x7f) <= (ctrlItem + 3))
     {
         GetControlTitle((ControlHandle)handle, previous);
-        if (previous[0] != value[0] || memcmp(previous + 1, value + 1, length))
-            SetControlTitle((ControlHandle)handle, value);
+        if (previous[0] != value[0] || memcmp(previous + 1, value + 1, length)) {
+            if (item == 13) setActionButton(dialog, value);
+            else SetControlTitle((ControlHandle)handle, value);
+        }
     } else {
         GetDialogItemText(handle, previous);
         if (previous[0] != value[0] || memcmp(previous + 1, value + 1, length)) SetDialogItemText(handle, value);
@@ -378,13 +472,7 @@ static void setText(DialogPtr dialog, short item, const char *text)
 
 static void setTransferStatus(DialogPtr dialog, const ImageTransfer *transfer)
 {
-    char text[256];
-    if (transfer->state && transfer->imageName[0]) {
-        snprintf(text, sizeof(text), "%s\r%s", transfer->imageName, transfer->message);
-        setText(dialog, 12, text);
-    } else {
-        setText(dialog, 12, transfer->message);
-    }
+    setText(dialog, 12, transfer->message);
 }
 
 static void drawPreferenceGeneva(DialogPtr dialog)
@@ -511,6 +599,7 @@ int main(void)
     short item;
     static SerialConnection serial;
     static ImageTransfer transfer;
+    static Bootstrap bootstrap;
     WideParser parser;
     EventRecord event;
     DialogPtr eventDialog;
@@ -528,6 +617,7 @@ int main(void)
     short directoryRetries = 0;
     unsigned long ackStarted = 0;
     unsigned long diagnosticTick = 0;
+    unsigned char lastBootstrapState = BOOTSTRAP_IDLE;
     wideReset(&parser);
 
     InitGraf(&qd.thePort);
@@ -573,6 +663,8 @@ int main(void)
     }
 
     do {
+        if (highlightedImage[0] && !transfer.state)
+            highlightFolderImage(dialog, "");
         item = 0;
         eventDialog = 0;
         quitRequested = false;
@@ -583,15 +675,29 @@ int main(void)
         if (WaitNextEvent(everyEvent, &event, connected ? 1 : 6, 0)) {
             if (event.what == activateEvt && (WindowPtr)event.message == (WindowPtr)dialog &&
                 (event.modifiers & activeFlag) && !folderError) {
+                SetPort((GrafPtr)dialog);
+                TextFont(kFontIDGeneva);
+                TextSize(9);
                 LActivate(true, folderList);
+                TextFont(systemFont);
+                TextSize(12);
                 error = refreshFolderList(dialog, &config.imageFolder);
                 if (error) {
                     sprintf(status, "Cannot refresh disks folder (Mac error %d).", error);
                     setText(dialog, 12, status);
                 }
+                if (highlightedImage[0])
+                    selectFolderImage(dialog, highlightedImage);
             }
             if (event.what == activateEvt && (WindowPtr)event.message == (WindowPtr)dialog &&
-                !(event.modifiers & activeFlag)) LActivate(false, folderList);
+                !(event.modifiers & activeFlag)) {
+                SetPort((GrafPtr)dialog);
+                TextFont(kFontIDGeneva);
+                TextSize(9);
+                LActivate(false, folderList);
+                TextFont(systemFont);
+                TextSize(12);
+            }
             if (event.what == keyDown && (event.modifiers & cmdKey)) {
                 menuAction = handleMenu(MenuKey(event.message & charCodeMask),
                                         dialog, !folderError);
@@ -636,6 +742,7 @@ int main(void)
                 if (part == inContent && clickedWindow == (WindowPtr)dialog && connected) {
                     /* Release before DialogSelect can enter control tracking. */
                     error = releaseConnection(&serial, &transfer);
+                    bootstrapCancel(&bootstrap);
                     connected = false;
                     awaitingDirectory = false;
                     wideReset(&parser);
@@ -719,6 +826,34 @@ int main(void)
                 }
             } else SelectWindow((WindowPtr)preferences);
         }
+        if (menuAction == kMenuBootstrap && confirmBootstrap()) {
+            error = noErr;
+            if (connected) {
+                error = releaseConnection(&serial, &transfer);
+                connected = false;
+            }
+            bootstrapCancel(&bootstrap);
+            if (!error)
+                error = serialOpen(&serial, config.printerPort, 3,
+                                   config.imageWriterCable);
+            if (!error) error = bootstrapStart(&bootstrap);
+            connected = error == noErr;
+            lastBootstrapState = BOOTSTRAP_IDLE;
+            if (error) {
+                sprintf(status, "Cannot start bootstrap (Mac error %d).", error);
+                setText(dialog, 12, status);
+                serialClose(&serial);
+            } else {
+                short type;
+                Handle handle;
+                Rect bounds;
+                GetDialogItem(dialog, 13, &type, &handle, &bounds);
+                HiliteControl((ControlHandle)handle, 0);
+                if (preferences) enableSettings(preferences, false);
+                setText(dialog, 13, "Cancel");
+                setText(dialog, 12, bootstrap.message);
+            }
+        }
         if (eventDialog == preferences && preferences) {
             if (!connected) {
                 if (item == 4 || item == 5) preferenceDraft.printerPort = item == 5;
@@ -740,6 +875,7 @@ int main(void)
         }
         /* Stop polling/dispatching as soon as Quit is selected. */
         if (quitRequested) {
+            bootstrapCancel(&bootstrap);
             error = releaseConnection(&serial, &transfer);
             if (error) {
                 connected = false;
@@ -753,8 +889,10 @@ int main(void)
             quit = true;
             break;
         }
-        if (item == 13 && !folderError && !releasedByClick) {
+        if (item == 13 && (!folderError || bootstrapActive(&bootstrap)) &&
+            !releasedByClick) {
             if (connected) {
+                bootstrapCancel(&bootstrap);
                 error = releaseConnection(&serial, &transfer);
                 connected = false;
                 awaitingDirectory = false;
@@ -779,12 +917,21 @@ int main(void)
         if (connected) {
             long count = sizeof(bytes), n;
             error = serialPollWrite(&serial);
+            if (!error && bootstrapActive(&bootstrap))
+                error = bootstrapPoll(&bootstrap, &serial);
+            if (bootstrap.state != lastBootstrapState) {
+                lastBootstrapState = bootstrap.state;
+                setText(dialog, 12, bootstrap.message);
+                if (bootstrap.state == BOOTSTRAP_DONE)
+                    setText(dialog, 13, "Disconnect");
+            }
             if (awaitingDirectory && serial.writing) ackStarted = TickCount();
             if (!error) error = serialRead(&serial, bytes, &count);
             if (error) {
                 sprintf(status, "Serial error %d. Disconnected.", error);
                 { OSErr cleanupError = releaseConnection(&serial, &transfer);
                   if (cleanupError) sprintf(status, "Serial error %d; cleanup error %d. Quit to retry.", error, cleanupError); }
+                bootstrapCancel(&bootstrap);
                 connected = false;
                 if (preferences) enableSettings(preferences, true);
                 setText(dialog, 13, "Connect");
@@ -799,12 +946,24 @@ int main(void)
                         ++commands;
                         {
                             Boolean handled;
+                            Boolean bootstrapHandled;
                             Boolean wasActive = transfer.state != 0;
-                            error = transferCommand(&transfer, &serial, &config.imageFolder, &parser, &handled);
+                            bootstrapHandled = bootstrapCommand(&bootstrap, &serial,
+                                                                parser.command,
+                                                                parser.payload,
+                                                                parser.length, &error);
+                            handled = bootstrapHandled;
+                            if (!handled)
+                                error = transferCommand(&transfer, &serial,
+                                                        &config.imageFolder,
+                                                        &parser, &handled);
                             if (error) break;
                             if (handled) {
                                 awaitingDirectory = false;
-                                setTransferStatus(dialog, &transfer);
+                                if (!bootstrapHandled)
+                                    setTransferStatus(dialog, &transfer);
+                                if (!bootstrapHandled && transfer.state && !wasActive)
+                                    highlightFolderImage(dialog, transfer.imageName);
                                 if (wasActive && !transfer.state) {
                                     error = releaseConnection(&serial, &transfer);
                                     connected = false;

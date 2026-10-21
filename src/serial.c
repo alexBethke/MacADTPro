@@ -110,7 +110,6 @@ OSErr serialClose(SerialConnection *serial)
 OSErr serialOpen(SerialConnection *serial, short printer, short baudIndex,
                  short handshake)
 {
-    static const short baud[] = {baud300, baud1200, baud2400, baud9600, baud19200};
     static const unsigned char aIn[] = {4, '.', 'A', 'I', 'n'};
     static const unsigned char aOut[] = {5, '.', 'A', 'O', 'u', 't'};
     static const unsigned char bIn[] = {4, '.', 'B', 'I', 'n'};
@@ -127,10 +126,7 @@ OSErr serialOpen(SerialConnection *serial, short printer, short baudIndex,
     if (error) { serial->input = 0; goto failed; }
     error = portOpen(printer ? bOut : aOut, &serial->output);
     if (error) { serial->output = 0; goto failed; }
-    {
-        short configuration = baud[baudIndex] | data8 | stop10 | noParity;
-        error = portControl(serial->output, kSERDConfiguration, &configuration, sizeof(configuration));
-    }
+    error = serialSetBaud(serial, baudIndex);
     if (error) goto failed;
     error = portBuffer(serial->input, serial->receiveBuffer, 8192);
     if (error) goto failed;
@@ -171,6 +167,20 @@ OSErr serialOpen(SerialConnection *serial, short printer, short baudIndex,
     return noErr;
 failed:
     serialClose(serial);
+    return error;
+}
+
+OSErr serialSetBaud(SerialConnection *serial, short baudIndex)
+{
+    static const short baud[] = {baud300, baud1200, baud2400, baud9600, baud19200};
+    static const unsigned long speeds[] = {300, 1200, 2400, 9600, 19200};
+    short configuration;
+    OSErr error;
+    if (!serial->output || baudIndex < 0 || baudIndex >= 5) return paramErr;
+    configuration = baud[baudIndex] | data8 | stop10 | noParity;
+    error = portControl(serial->output, kSERDConfiguration, &configuration,
+                        sizeof(configuration));
+    if (!error) serial->baud = speeds[baudIndex];
     return error;
 }
 

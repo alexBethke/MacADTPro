@@ -206,7 +206,47 @@ verify format interpretation against upstream before declaring support. Treat
 - [Retro68](https://github.com/autc04/Retro68)
 
 The protocol implementation adapts ADTPro's GPL-2.0-or-later source; see LICENSE
-and its source attribution. No bootstrap assets are bundled yet.
+and its source attribution.
+
+The Bootstrap menu loads the matching ADTPro 2.1.0 serial client directly into
+Apple II memory. It sends the upstream monitor loader, ProDOS MLI, and client in
+three automatic stages. Monitor text starts at the upstream default of 9600
+baud; the bootstrapper then changes both ends to 19200. The original 115200
+defaults are changed in transit because the classic Macintosh Serial Manager/SCC
+path does not offer 115200 baud. The official `ADTPRO-2.1.0.DSK` is copied to `build/disks`, where
+the newly bootstrapped client can receive it to create a bootable floppy.
+
+The bundled payloads and disk image are from the official ADTPro 2.1.0 release
+(tag `v_2_1_0`, commit `31227fe4c88494f722f5a342d13ad2ff998e0017`).
+Their unmodified upstream SHA-256 checksums are:
+
+- `grub2.dmp`: `0c4e4d125ca70811f6c39f974fae262cf91e12c9a2b8ee054fb2382ca025e186`
+- `PDSpeed.raw`: `4c8d617c4d0b9d00aa7bbbd3f47e860ccbaa1a0ec0fb77f274598f93f4fac47f`
+- `adtpro.raw`: `c676b85df88e5c2115227640123ed7eb54993eded69c667806b5d94e1875ae03`
+- `ADTPRO-2.1.0.DSK`: `e63776271c8025033e0dcfb0b137b21e6597810c4886688fb21180e02bd10048`
+
+### Serial bootstrap procedure
+
+1. Connect the Apple II and Macintosh serial ports. In MacADTPro Preferences,
+   select the correct Macintosh port and cable type. Bootstrap starts at 9600
+   and automatically switches to 19200, regardless of the normal speed setting.
+2. Start the Apple II without loading an operating system. Press Control-Reset
+   to reach the Applesoft `]` prompt.
+3. Type `IN#2` and press Return. Replace `2` with the slot containing the Super
+   Serial Card; the IIc and IIgs modem port use virtual slot 2.
+4. Press Control-A. At `APPLE SSC:` or the blinking `?`, type `14B`. Press
+   Return on a Super Serial Card; doing so is harmless on a IIc/IIgs.
+5. In MacADTPro choose **Bootstrap > Load ADTPro 2.1.0 into memory...**, review
+   the same on-screen instructions, and click **Send**.
+6. Wait for all three status stages. The Apple II first shows monitor text, then
+   the bootstrapper screen with changing progress characters, and finally the
+   ADTPro client. Do not reset it or change baud rates during this sequence.
+7. To make a permanent boot disk, insert and format a floppy in the Apple II,
+   then receive `ADTPRO-2.1.0.DSK` from the Macintosh `disks` folder.
+
+If the Apple II reports a syntax error before loading begins, press Return a few
+times and repeat steps 3-5. A Franklin ACE 500 instead needs `PR#2`, Control-A
+`14B`, `PR#0`, and `IN#2`, pressing Return after each command.
 
 ## Completion correction
 

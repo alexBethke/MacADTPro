@@ -18,6 +18,7 @@ typedef struct {
 } SerialConnection;
 OSErr serialOpen(SerialConnection *serial, short printer, short baudIndex,
                  short handshake);
+OSErr serialSetBaud(SerialConnection *serial, short baudIndex);
 OSErr serialClose(SerialConnection *serial);
 OSErr serialAbortWrite(SerialConnection *serial);
 OSErr serialRead(SerialConnection *serial, unsigned char *bytes, long *count);
