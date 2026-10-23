@@ -2,8 +2,10 @@
 
 ## Generate the rainbow resource
 
-The application embeds `rainbow.pict` as a native QuickDraw `PICT` resource.
-Generate the resource payload with:
+The application embeds `src/rainbow.pict` as a native QuickDraw `PICT`
+resource. The original standalone image, including its conventional 512-byte
+file header, is kept as `src/rainbow_source.pict`. Generate the headerless
+resource payload with:
 
 ```sh
 ./scripts/generate_rainbow_pict_resource.sh
@@ -19,4 +21,5 @@ paths, pass the input and output filenames:
 ```
 
 `./scripts/build.sh` runs the generator before configuring and building the
-application, so rebuilding after replacing `rainbow.pict` is sufficient.
+application, so rebuilding after replacing `src/rainbow_source.pict` is
+sufficient.

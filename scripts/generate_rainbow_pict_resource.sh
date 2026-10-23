@@ -4,7 +4,7 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(dirname -- "$script_dir")
-source_image=${1:-"$project_dir/rainbow.pict"}
+source_image=${1:-"$project_dir/src/rainbow_source.pict"}
 output_file=${2:-"$project_dir/src/rainbow.pict"}
 
 if [ ! -f "$source_image" ]; then
