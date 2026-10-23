@@ -10,6 +10,6 @@ configure_file(src/bootstrap_assets/adtpro.raw adtpro.raw COPYONLY)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/disks)
 configure_file(src/bootstrap_assets/ADTPRO-2.1.0.DSK
                disks/ADTPRO-2.1.0.DSK COPYONLY)
-add_application(MacADTPro src/main.c src/serial.c src/bootstrap.c src/wide.c src/image_folder.c src/directory.c src/image.c src/image_size.c src/disk_order.c src/transfer.c src/preferences.c src/preferences_format.c src/app.r src/bootstrap_text.r src/bootstrap_prodos.r src/bootstrap_client.r)
+add_application(MacADTPro src/main.c src/serial.c src/bootstrap.c src/wide.c src/image_folder.c src/directory.c src/image.c src/image_size.c src/disk_order.c src/transfer.c src/upload.c src/upload_packet.c src/preferences.c src/preferences_format.c src/app.r src/bootstrap_text.r src/bootstrap_prodos.r src/bootstrap_client.r)
 target_compile_options(MacADTPro PRIVATE -Wall -Wextra -ffunction-sections)
 set_target_properties(MacADTPro PROPERTIES LINK_FLAGS "-Wl,-gc-sections -Wl,--mac-single")

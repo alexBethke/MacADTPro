@@ -10,13 +10,12 @@ The application currently provides:
   19200 baud;
 - standard serial-cable and ImageWriter II cable profiles;
 - a browser for disk images stored beside the application;
-- ADTPro directory, image-size, and Mac-to-Apple-II image-transfer commands;
+- ADTPro directory, image-size, Mac-to-Apple-II download, and Apple-II-to-Mac
+  upload commands;
 - ProDOS-order `.po` images and DOS-order `.dsk`/`.do` images;
 - an in-memory serial bootstrap for the bundled ADTPro 2.1.0 Apple II client;
 - persistent serial preferences; and
 - transfer status, retry details, and serial diagnostics.
-
-Apple-II-to-Mac image uploads are not implemented.
 
 ## Build
 
@@ -67,6 +66,14 @@ disk. A completed transfer, cancellation, timeout, or error releases the serial
 port; reconnect before starting another operation. The same button changes to
 Disconnect while a connection is active.
 
+To copy a disk from the Apple II to the Macintosh, choose Send in the Apple II
+client, enter a destination name, and select the source disk. MacADTPro refuses
+to overwrite an existing image. Incoming data is written to a preallocated
+temporary file and renamed to the requested destination only after every block,
+CRC, and the client's final status have succeeded. Cancellation, timeout, an
+I/O error, or a failed transfer removes the temporary file. Uploads time out
+after five minutes without serial activity.
+
 The main window is fixed at 380 by 304 pixels so it fits a 512 by 384 display.
 Its image list is scrollable and shows up to 128 HFS catalog entries. The Apple
 II client receives directory pages of 18 files with wildcard filtering.
@@ -79,12 +86,17 @@ from DOS sector order to ProDOS block order while being sent; the source file is
 not modified. Extensions describe the byte ordering, not the filesystem inside
 the image, so do not rename a DOS-order `.dsk` file to `.po`.
 
-Images are opened read-only. `.po` files must contain complete 512-byte blocks.
-DOS-order images must contain complete 4096-byte tracks. A conventional 35-track
-floppy image is 143360 bytes, although other complete-track sizes are accepted.
+Uploads use the same convention. A 280-block upload is saved in DOS sector order
+with a `.dsk` extension unless the requested name already ends in `.dsk` or
+`.do`. Other sizes are saved in ProDOS block order with a `.po` extension.
 
-2IMG, nibble images, partial-track DOS images, directory changes, and
-Apple-II-to-Mac uploads are not supported.
+Download source images are opened read-only. `.po` files must contain complete
+512-byte blocks. DOS-order images must contain complete 4096-byte tracks. A
+conventional 35-track floppy image is 143360 bytes, although other complete-track
+sizes are accepted.
+
+2IMG, nibble images, partial-track DOS images, and directory changes are not
+supported.
 
 ## Transfer behavior
 
@@ -158,7 +170,8 @@ Unmodified upstream asset SHA-256 checksums:
 
 Portable tests cover Wide parsing and encoding, comparison against code derived
 from ADTPro 2.1.0, DOS/ProDOS sector ordering, image sizing, transfer state and
-retry behavior, and the preferences-file format. Example commands:
+retry behavior, upload packet decoding and CRC validation, and the
+preferences-file format. Example commands:
 
 ```sh
 mkdir -p build/tests
@@ -175,6 +188,11 @@ cc -std=c99 -Wall -Wextra -Itests/mac_stubs -Isrc \
   tests/preferences_test.c src/preferences_format.c \
   -o build/tests/preferences_test
 ./build/tests/preferences_test
+
+cc -std=c99 -Wall -Wextra -Isrc \
+  tests/upload_packet_test.c src/upload_packet.c src/wide.c \
+  -o build/tests/upload_packet_test
+./build/tests/upload_packet_test
 ```
 
 The transfer regression suite includes a complete 280-block image with a
@@ -191,7 +209,7 @@ bootstrap sequence.
 
 The following are intentionally outside the current feature set:
 
-- Apple-II-to-Mac uploads and overwrite handling;
+- upload overwrite confirmation (existing files are currently always refused);
 - 2IMG, nibble, and other image containers;
 - custom image folders and subdirectory navigation;
 - arbitrary serial framing or speeds above 19200; and

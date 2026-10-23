@@ -20,6 +20,7 @@
 #include "directory.h"
 #include "transfer.h"
 #include "preferences.h"
+#include "upload.h"
 
 typedef struct {
     short printerPort;
@@ -582,11 +583,13 @@ static void setPreferenceControls(DialogPtr dialog, const Configuration *config)
 }
 
 /* Always attempt both cleanup operations; file errors must not retain a port. */
-static OSErr releaseConnection(SerialConnection *serial, ImageTransfer *transfer)
+static OSErr releaseConnection(SerialConnection *serial, ImageTransfer *transfer,
+                               ImageUpload *upload)
 {
     OSErr portError = serialClose(serial);
     OSErr fileError = transferCancel(transfer);
-    return portError ? portError : fileError;
+    OSErr uploadError = uploadCancel(upload);
+    return portError ? portError : (fileError ? fileError : uploadError);
 }
 
 int main(void)
@@ -600,6 +603,7 @@ int main(void)
     short item;
     static SerialConnection serial;
     static ImageTransfer transfer;
+    static ImageUpload upload;
     static Bootstrap bootstrap;
     WideParser parser;
     EventRecord event;
@@ -746,7 +750,7 @@ int main(void)
                 }
                 if (part == inContent && clickedWindow == (WindowPtr)dialog && connected) {
                     /* Release before DialogSelect can enter control tracking. */
-                    error = releaseConnection(&serial, &transfer);
+                    error = releaseConnection(&serial, &transfer, &upload);
                     bootstrapCancel(&bootstrap);
                     connected = false;
                     awaitingDirectory = false;
@@ -834,7 +838,7 @@ int main(void)
         if (menuAction == kMenuBootstrap && confirmBootstrap()) {
             error = noErr;
             if (connected) {
-                error = releaseConnection(&serial, &transfer);
+                error = releaseConnection(&serial, &transfer, &upload);
                 connected = false;
             }
             bootstrapCancel(&bootstrap);
@@ -889,7 +893,7 @@ int main(void)
         /* Stop polling/dispatching as soon as Quit is selected. */
         if (quitRequested) {
             bootstrapCancel(&bootstrap);
-            error = releaseConnection(&serial, &transfer);
+            error = releaseConnection(&serial, &transfer, &upload);
             if (error) {
                 connected = false;
                 awaitingDirectory = false;
@@ -906,7 +910,7 @@ int main(void)
             !releasedByClick) {
             if (connected) {
                 bootstrapCancel(&bootstrap);
-                error = releaseConnection(&serial, &transfer);
+                error = releaseConnection(&serial, &transfer, &upload);
                 connected = false;
                 awaitingDirectory = false;
                 if (error) {
@@ -942,7 +946,7 @@ int main(void)
             if (!error) error = serialRead(&serial, bytes, &count);
             if (error) {
                 sprintf(status, "Serial error %d. Disconnected.", error);
-                { OSErr cleanupError = releaseConnection(&serial, &transfer);
+                { OSErr cleanupError = releaseConnection(&serial, &transfer, &upload);
                   if (cleanupError) sprintf(status, "Serial error %d; cleanup error %d. Quit to retry.", error, cleanupError); }
                 bootstrapCancel(&bootstrap);
                 connected = false;
@@ -951,21 +955,46 @@ int main(void)
                 setText(dialog, 12, status);
             } else {
                 for (n = 0; n < count; ++n) {
-                    int result = wideFeed(&parser, bytes[n]);
+                    Boolean uploadByteHandled;
+                    Boolean wasUploadActive = upload.active;
+                    int result;
                     ++received;
                     lastByte = TickCount();
+                    error = uploadFeed(&upload, &serial, bytes[n],
+                                       &uploadByteHandled);
+                    if (uploadByteHandled) {
+                        setText(dialog, 12, upload.message);
+                        if (error || (wasUploadActive && !upload.active)) {
+                            OSErr cleanupError = releaseConnection(&serial, &transfer,
+                                                                   &upload);
+                            connected = false;
+                            if (preferences) enableSettings(preferences, true);
+                            setText(dialog, 13, "Connect");
+                            if (cleanupError && !error) error = cleanupError;
+                        }
+                        if (error || !connected) break;
+                        continue;
+                    }
+                    result = wideFeed(&parser, bytes[n]);
                     if (result == WIDE_COMMAND) {
                         static const unsigned char home[] = {0xc1, 0, 0, 0xd8, 0x19};
                         ++commands;
                         {
                             Boolean handled;
                             Boolean bootstrapHandled;
+                            Boolean uploadHandled = false;
                             Boolean wasActive = transfer.state != 0;
+                            wasUploadActive = upload.active;
                             bootstrapHandled = bootstrapCommand(&bootstrap, &serial,
                                                                 parser.command,
                                                                 parser.payload,
                                                                 parser.length, &error);
                             handled = bootstrapHandled;
+                            if (!handled)
+                                error = uploadCommand(&upload, &serial,
+                                                      &config.imageFolder,
+                                                      &parser, &uploadHandled);
+                            if (uploadHandled) handled = true;
                             if (!handled)
                                 error = transferCommand(&transfer, &serial,
                                                         &config.imageFolder,
@@ -974,11 +1003,17 @@ int main(void)
                             if (handled) {
                                 awaitingDirectory = false;
                                 if (!bootstrapHandled)
-                                    setTransferStatus(dialog, &transfer);
+                                    setText(dialog, 12, uploadHandled
+                                            ? upload.message : transfer.message);
+                                if (upload.active && !wasUploadActive)
+                                    highlightFolderImage(dialog, upload.imageName);
                                 if (!bootstrapHandled && transfer.state && !wasActive)
                                     highlightFolderImage(dialog, transfer.imageName);
-                                if (wasActive && !transfer.state) {
-                                    error = releaseConnection(&serial, &transfer);
+                                if ((wasActive && !transfer.state) ||
+                                    (wasUploadActive && !upload.active)) {
+                                    if (wasUploadActive && !upload.active && !error)
+                                        refreshFolderList(dialog, &config.imageFolder);
+                                    error = releaseConnection(&serial, &transfer, &upload);
                                     connected = false;
                                     if (preferences) enableSettings(preferences, true);
                                     setText(dialog, 13, "Connect");
@@ -1050,7 +1085,7 @@ int main(void)
                             error = transferRetry(&transfer);
                             setTransferStatus(dialog, &transfer);
                             if (error || !transfer.state) {
-                                OSErr cleanupError = releaseConnection(&serial, &transfer);
+                                OSErr cleanupError = releaseConnection(&serial, &transfer, &upload);
                                 connected = false;
                                 if (preferences) enableSettings(preferences, true);
                                 setText(dialog, 13, "Connect");
@@ -1062,13 +1097,28 @@ int main(void)
                             }
                             continue;
                         }
-                        error = releaseConnection(&serial, &transfer);
+                        {
+                            Boolean uploadWasActive = upload.active;
+                            unsigned short uploadBlock = upload.done;
+                            error = releaseConnection(&serial, &transfer, &upload);
+                            if (uploadWasActive) {
+                                if (error)
+                                    sprintf(status, "Upload checksum error at block %u; cleanup error %d.",
+                                            uploadBlock, error);
+                                else
+                                    sprintf(status, "Upload checksum error at block %u. Partial file removed.",
+                                            uploadBlock);
+                            } else if (error)
+                                sprintf(status, "Checksum error at block %u; cleanup error %d.",
+                                        transfer.block, error);
+                            else
+                                sprintf(status, "Checksum error at block %u. Transfer stopped and disconnected.",
+                                        transfer.block);
+                        }
                         connected = false;
                         awaitingDirectory = false;
                         if (preferences) enableSettings(preferences, true);
                         setText(dialog, 13, "Connect");
-                        if (error) sprintf(status, "Checksum error at block %u; cleanup error %d.", transfer.block, error);
-                        else sprintf(status, "Checksum error at block %u. Transfer stopped and disconnected.", transfer.block);
                         setText(dialog, 12, status);
                         wideReset(&parser);
                         break;
@@ -1079,6 +1129,18 @@ int main(void)
                 if (!connected) continue;
                 if (count && !parser.state && !commands)
                     { sprintf(status, "Receiving serial data: %lu bytes.", received); setText(dialog, 12, status); }
+                if (upload.active &&
+                    (unsigned long)(TickCount() - upload.lastActivity) > 18000) {
+                    strcpy(upload.message,
+                           "Upload timed out after 5 minutes. Partial file removed.");
+                    error = releaseConnection(&serial, &transfer, &upload);
+                    connected = false;
+                    awaitingDirectory = false;
+                    if (preferences) enableSettings(preferences, true);
+                    setText(dialog, 13, "Connect");
+                    setText(dialog, 12, upload.message);
+                    continue;
+                }
                 if (parser.state && (unsigned long)(TickCount() - lastByte) > 300) {
                     wideReset(&parser);
                     if (transfer.state) {
@@ -1086,7 +1148,7 @@ int main(void)
                         setTransferStatus(dialog, &transfer);
                         if (!error && transfer.state) continue;
                     }
-                    error = releaseConnection(&serial, &transfer);
+                    error = releaseConnection(&serial, &transfer, &upload);
                     connected = false;
                     awaitingDirectory = false;
                     if (preferences) enableSettings(preferences, true);
@@ -1097,7 +1159,7 @@ int main(void)
                     continue;
                 }
                 if (error) {
-                    OSErr cleanupError = releaseConnection(&serial, &transfer);
+                    OSErr cleanupError = releaseConnection(&serial, &transfer, &upload);
                     connected = false;
                     if (preferences) enableSettings(preferences, true);
                     setText(dialog, 13, "Connect");
@@ -1115,7 +1177,7 @@ int main(void)
                     if (!wasWriting && serial.writing) wideReset(&parser);
                     if (strcmp(previous, transfer.message)) setTransferStatus(dialog, &transfer);
                     if (error || !transfer.state) {
-                        { OSErr cleanupError = releaseConnection(&serial, &transfer);
+                        { OSErr cleanupError = releaseConnection(&serial, &transfer, &upload);
                           if (cleanupError) error = cleanupError; }
                         connected = false;
                         if (preferences) enableSettings(preferences, true);

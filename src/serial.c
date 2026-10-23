@@ -234,6 +234,12 @@ OSErr serialRead(SerialConnection *serial, unsigned char *bytes, long *count)
 OSErr serialSend(SerialConnection *serial, const unsigned char *bytes, long count)
 {
     OSErr error;
+    /* The peer can respond after the driver completes but before the event loop
+       has observed that completion. Reap it here before declaring output busy. */
+    if (serial->writing) {
+        error = serialPollWrite(serial);
+        if (error) return error;
+    }
     if (serial->writing || count < 1 || (unsigned long)count > sizeof(serial->sendBuffer))
         return paramErr;
     memcpy(serial->sendBuffer, bytes, count);

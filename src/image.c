@@ -32,16 +32,6 @@ unsigned char imageOpen(const ImageFolder *folder, const unsigned char *name, Di
     if (!name[0] || name[0] > 31) return 2;
     for (i = 1; i <= name[0]; ++i)
         if (name[i] == ':' || name[i] == '/' || name[i] < 32) return 2;
-    {
-        char extension[5];
-        unsigned dot = name[0];
-        while (dot && name[dot] != '.') --dot;
-        if (!dot || name[0] - dot > 3) return 4;
-        for (i = dot + 1; i <= name[0]; ++i) extension[i - dot - 1] = toupper(name[i]);
-        extension[name[0] - dot] = 0;
-        if (!strcmp(extension, "DSK") || !strcmp(extension, "DO")) image->dosOrder = true;
-        else if (strcmp(extension, "PO")) return 4;
-    }
     memset(&openPB, 0, sizeof(openPB));
     openPB.fileParam.ioNamePtr = (StringPtr)name;
     openPB.fileParam.ioVRefNum = folder->volume;
@@ -49,6 +39,22 @@ unsigned char imageOpen(const ImageFolder *folder, const unsigned char *name, Di
     openPB.ioParam.ioPermssn = fsRdPerm;
     if (PBHOpenDFSync(&openPB)) return 2;
     image->ref = openPB.ioParam.ioRefNum;
+    {
+        char extension[5];
+        unsigned dot = name[0];
+        while (dot && name[dot] != '.') --dot;
+        if (!dot || name[0] - dot > 3) {
+            imageClose(image);
+            return 4;
+        }
+        for (i = dot + 1; i <= name[0]; ++i) extension[i - dot - 1] = toupper(name[i]);
+        extension[name[0] - dot] = 0;
+        if (!strcmp(extension, "DSK") || !strcmp(extension, "DO")) image->dosOrder = true;
+        else if (strcmp(extension, "PO")) {
+            imageClose(image);
+            return 4;
+        }
+    }
     memset(&sizePB, 0, sizeof(sizePB));
     sizePB.ioParam.ioRefNum = image->ref;
     if (PBGetEOFSync(&sizePB)) { imageClose(image); return 2; }
