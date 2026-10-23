@@ -1,285 +1,210 @@
 # MacADTPro
 
-Proposed native classic Macintosh ADTPro host, built with Retro68, with
-serial transport and ADTPro 2.1.0 client compatibility.
+MacADTPro is a native classic Macintosh host for transferring Apple II disk
+images with the ADTPro 2.1.0 Wide protocol. It is built with Retro68 and targets
+68020-or-newer Macs running System 7.0 or later.
 
-Target: System 7.1 on 68k Macintosh. The assumed role is a Macintosh server
-serving Apple II disk images. This repository includes serial connection and
-Wide protocol diagnostics, directory listings, image-size queries and
-Mac-to-Apple-II transfers of raw ProDOS-order `.po` and 140 KB DOS-order
-`.dsk`/`.do` images.
+The application currently provides:
+
+- modem- and printer-port serial connections at 300, 1200, 2400, 9600, or
+  19200 baud;
+- standard serial-cable and ImageWriter II cable profiles;
+- a browser for disk images stored beside the application;
+- ADTPro directory, image-size, and Mac-to-Apple-II image-transfer commands;
+- ProDOS-order `.po` images and DOS-order `.dsk`/`.do` images;
+- an in-memory serial bootstrap for the bundled ADTPro 2.1.0 Apple II client;
+- persistent serial preferences; and
+- transfer status, retry details, and serial diagnostics.
+
+Apple-II-to-Mac image uploads are not implemented.
 
 ## Build
 
+Configure with the Retro68 68k toolchain and build with CMake:
+
 ```sh
-cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=/Users/alex/Git/Retro68-build/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
+cmake -S . -B build \
+  -DCMAKE_TOOLCHAIN_FILE=/path/to/Retro68-build/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
 cmake --build build
 ```
 
-Adjust the toolchain path for other installations. Retro68 produces
-`build/MacADTPro.bin` (MacBinary) and `build/MacADTPro.dsk` for transfer or emulator
-use. Serial port, baud rate, and cable preferences are saved in a versioned
-`MacADTPro Prefs` file in the System Preferences folder. The original configuration
-UI was tested successfully by the user. The serial diagnostic build has passed
-cross-compilation; physical serial I/O still needs testing.
+The build produces:
 
-## Current serial diagnostic
+- `build/MacADTPro.bin`: MacBinary application;
+- `build/MacADTPro.dsk`: emulator/transfer disk image; and
+- `build/disks/ADTPRO-2.1.0.DSK`: the bundled ADTPro boot-disk image.
 
-Any mouse click in the application's window while connected now cancels the
-transfer and releases the serial port before Toolbox control tracking. Click
-Connect again to reconnect. The same button toggles between Connect and Disconnect. Quit, window-click disconnect and I/O error handling share
-one cleanup path. Serial cleanup is attempted even if closing an image fails;
-both serial channels are attempted even if one cleanup operation fails. Failed
-cleanup is reported and the application does not quit until cleanup succeeds.
-This behavior is intended to address the reported connected-window crashes;
-physical verification remains pending.
+`scripts/build.sh` can also regenerate the embedded rainbow PICT and run the
+configured build. See `scripts/README.md` for details.
 
-To receive an image, put a `.po` or DOS-order `.dsk`/`.do` file in `disks`, connect, and
-choose Receive on the Apple II. Select the image or enter its filename, then
-choose the destination disk. This writes the destination Apple II disk. Do not
-rename DOS-order `.dsk` files to `.po`. The app converts `.dsk`/`.do` sector
-ordering on the fly, using the sector pairing in ADTPro 2.1.0's AppleCommander
-library. The image file is not modified. `.dsk`/`.do` requires complete 4096-byte tracks (16 sectors per track);
-35-track images contain 143360 bytes, but smaller and larger images are accepted.
-The transfer count comes from the file size divided by 512, with a short final
-packet when needed; empty sectors remain part of the image.
-Use `.po` for images stored in ProDOS block order, including ProDOS filesystems
-that happen to have a `.dsk` extension. Filename extension describes image byte
-ordering here, not the filesystem inside the image.
+The application requests 768 KB of preferred memory and 512 KB minimum.
 
-The app streams read-only files using the requested packet size (up to 40 blocks), honoring the client's
-preferred packet size and 40-block buffer boundaries, retries NAKs up to ten
-times, and requires the final client ACK before reporting completion. Cancel,
-timeout, Disconnect and Quit close the image file. Completion or cancellation
-also releases the serial port; reconnect before another operation. During image transfer, malformed acknowledgements or checksum errors retry
-the current packet up to ten times, with increasing pauses from 250 ms to one
-second. Bursts of damaged envelopes count as one retry until the packet is actually
-resent; duplicate ACKs are ignored. ACK deadlines allow 120 seconds. Serial output
-also allows two minutes of handshaking delay beyond the estimated wire time. Explicit client cancellation still stops immediately;
-a retry limit or initial ACK timeout stops and disconnects. Failed image-file closure retains the
-file reference for cleanup retries but never keeps transmission active.
-Indexed selection uses the
-most recent displayed directory page; manual filenames are also supported.
-Preferred memory is 768 KB, minimum 512 KB. This leaves sufficient application
-heap for the main window and the separate Preferences window on System 7.
+## Using MacADTPro
 
-2IMG, nibble images, nonstandard `.dsk` sizes, Apple-II-to-Mac uploads and directory
-changes remain unsupported. Transfer tests pass on the host; physical image
-transfer and the serial crash fix still need confirmation.
+Place supported images in a folder named `disks` beside the application. The
+folder is created on startup if it does not exist. Existing files are never
+removed or replaced. A file named `disks`, a read-only volume, or another folder
+error disables Connect and displays the corresponding Mac OS error.
 
-The main interface is a standard fixed-size document window, 380 by 304 pixels,
-sized to fit a 512 by 384 screen with room for the menu bar and window frame.
-The Apple menu contains About MacADT Pro, and the File menu contains Quit
-(Command-Q). File also contains Preferences (Command-.), which opens a separate
-window for the serial port, baud rate, cable option, and their explanatory text.
-The main window lists image files from the `disks` folder in a compact, scrollable
-list and keeps the connection and transfer status visible. Connect is the main
-window's default button; OK is the Preferences default button, so Return or Enter
-activates either one when its window is frontmost. The window close box also quits
-through the same cleanup path.
+Open **File > Preferences...** (Command-.) and choose:
 
-Select Modem or Printer, choose the same baud rate as the Apple II client, and
-click Connect. Settings are locked until Disconnect. If using the Printer port,
-turn off AppleTalk first if it owns that port. Errors include the Mac OS error
-number. Incoming Wide envelopes and payload XOR checksums are validated without
-allocating buffers based on incoming lengths. Directory requests receive an
-18-file page from `disks` with wildcard filtering, differential RLE, CRC-CCITT,
-and acknowledgements. Files appear in HFS catalog order; subdirectories are
-currently omitted. Unsupported commands return the
-upstream Go Home envelope to the Apple II; they do not perform disk operations.
-The status reports commands, acknowledgements and RX/TX byte counts. TX counts
-driver-completed bytes; it does not prove receipt by the Apple II.
+- the Modem or Printer port;
+- the same transfer speed configured in the Apple II client; and
+- whether an ImageWriter II cable is in use.
 
-The default image folder is `disks` beside the running application. On startup,
-the app uses the Process Manager to find its actual parent folder and creates
-`disks` if missing. Existing folders and images are preserved. A file named
-`disks`, or a volume that prevents creation, produces an error and disables
-Connect. On read-only media, create the folder before copying the app to it.
+The default is the Modem port at 19200 baud with the ImageWriter II option off.
+Clicking OK saves these settings in the versioned, checksummed `MacADTPro Prefs`
+file in the System Preferences folder. Missing, corrupt, or unsupported
+preference files fall back to the defaults. Cancel and the Preferences close box
+discard changes.
 
-The ImageWriter II checkbox enables CTS output gating and DTR receive flow
-control through driver control code 14. Physical compatibility depends on the
-cable and endpoint. The host asserts DTR/HSKo on connection. Writes run
-asynchronously with a deadline allowing 300-baud transmission plus ten seconds so
-missing handshake signals cannot freeze the UI. Incoming reads consume only
-bytes already buffered by the driver. Disconnect cancels pending output and
-detaches the application-owned receive buffer.
+If the Printer port is selected, disable AppleTalk when it owns that port.
+Preferences are locked while connected.
 
-One connection button toggles between Connect and Disconnect. Button titles are
-updated with SetControlTitle; SetDialogItemText is used only for text items.
-The previous use of a text-item API on control handles corrupted controls.
-The separate middle button has been removed.
+Click **Connect**, then choose Receive in the Apple II ADTPro client. Select an
+image from the client directory or enter its name and choose the destination
+disk. A completed transfer, cancellation, timeout, or error releases the serial
+port; reconnect before starting another operation. The same button changes to
+Disconnect while a connection is active.
 
-File > Quit, Command-Q, or the window close box stops command processing immediately, cancels I/O on both channels,
-detaches the system-heap receive buffer, closes input then output, frees the
-buffer, disposes the dialog, and calls the native `ExitToShell` trap. Every
-serial cleanup result is checked. If cleanup fails, Quit keeps the app alive
-and reports the Mac OS error so it can be retried. This shutdown revision is
-intended to address the reported System Error 1 after connecting; confirmation
-on physical System 7.1 hardware is pending.
+The main window is fixed at 380 by 304 pixels so it fits a 512 by 384 display.
+Its image list is scrollable and shows up to 128 HFS catalog entries. The Apple
+II client receives directory pages of 18 files with wildcard filtering.
+Subdirectories are omitted.
 
-The SE/30-to-IIe setup has displayed an empty directory successfully. Bus errors
-on TX Test and Quit remain under investigation. The current revision replaces
-serial interface-library helpers with fully zero-initialized Device Manager
-parameter blocks and word-aligns the transmit buffer. Compile-time assertions
-check buffer/PB alignment. Physical confirmation of this revision is pending.
+## Image formats
 
-Host-side parser checks:
+`.po` files are read in ProDOS block order. `.dsk` and `.do` files are converted
+from DOS sector order to ProDOS block order while being sent; the source file is
+not modified. Extensions describe the byte ordering, not the filesystem inside
+the image, so do not rename a DOS-order `.dsk` file to `.po`.
 
-```sh
-cc -std=c99 -Wall -Wextra -Isrc tests/wide_test.c src/wide.c -o build/wide_test
-./build/wide_test
-cc -std=c99 -Wall -Wextra -Itests/mac_stubs -Isrc tests/transfer_test.c src/transfer.c src/wide.c -o build/transfer_test
-./build/transfer_test
-```
+Images are opened read-only. `.po` files must contain complete 512-byte blocks.
+DOS-order images must contain complete 4096-byte tracks. A conventional 35-track
+floppy image is 143360 bytes, although other complete-track sizes are accepted.
 
-## Proposed configuration
+2IMG, nibble images, partial-track DOS images, directory changes, and
+Apple-II-to-Mac uploads are not supported.
 
-| Setting | Proposal |
-| --- | --- |
-| Serial port | Modem or Printer; default Modem. Report ports unavailable or in use. |
-| Transfer baud | 300, 1200, 2400, 9600, 19200; default 19200. 115200 is optional and is not a release blocker. Expose it only with a verified driver/hardware path. Never silently substitute a different rate. |
-| Cable profile | Standard serial cable or ImageWriter II cable; map to verified Macintosh handshake behavior and document endpoint-specific wiring. |
-| Image folder | Default `disks` beside the application, created automatically if missing. A custom-folder selector may be added later. |
-| Write access | Read-only or permit incoming disk images; default read-only. |
-| Existing images | Reject overwrites by default. Receive to a temporary file and publish only after successful completion. |
-| Bootstrap | Separate target/profile and initial speed from normal transfer speed. Optional after basic transfer support. |
-| Diagnostics | Optional file log with protocol errors, retries, and serial overruns. Off by default. |
+## Transfer behavior
 
-Keep framing fixed at 8 data bits, no parity, one stop bit, matching ADTPro.
-Disable XON/XOFF for binary transfers. Avoid exposing arbitrary framing options.
-Preferences use a versioned, checksummed file in the System Preferences folder;
-missing or invalid files fall back to the documented defaults.
+The transfer engine streams data rather than loading an entire image into
+memory. It honors the Apple II client's requested packet size up to 40 blocks,
+splits packets at 40-block boundaries, and sends a smaller final packet when
+needed. DOS-order conversion is also performed one track at a time.
 
-Advanced timeout/retry and payload controls should initially follow the upstream
-protocol. At 300 baud, deadlines must allow actual packet transmission time;
-the Apple II client's deadlines and supported rates also need verification.
-An app offering a baud rate does not establish that every client supports it.
+Wide envelopes, payload XOR checksums, compressed packets, and CRC-CCITT values
+are validated or generated with bounded buffers. Completion is reported only
+after the final client ACK for the image's full block count.
 
-## Protocol and implementation
+Malformed or unexpected acknowledgements and checksum failures retry the current
+packet up to ten times. Retry delay increases from 250 ms to one second, and a
+burst of damaged input consumes only one retry when the packet is actually
+resent. Duplicate ACKs are ignored. Ordinary packet ACKs allow 120 seconds;
+ACKs that follow a 40-block boundary or the final packet allow five minutes for
+physical disk writes. Serial writes allow the estimated wire time plus two
+minutes for handshaking delays. Explicit client cancellation stops immediately.
 
-Implement the ADTPro 2.x "Wide" protocol from the pinned `v_2_1_0` sources.
-It was introduced in 2.0.0; extending legacy MacADT framing is insufficient.
-Before implementation, extract commands, byte order, packet boundaries,
-compression, checksums, acknowledgements, retry rules, and abort behavior from
-both the upstream host and Apple II client. Record byte-level fixtures.
+Serial I/O is asynchronous so the event loop remains responsive. Disconnect and
+Quit cancel pending output, detach the application-owned receive buffer, close
+both serial channels, and close any open image. Cleanup failures are displayed
+and can be retried. Status and diagnostics are drawn through monochrome
+offscreen bitmaps to reduce flicker on classic QuickDraw systems.
 
-Separate a portable C/C++ protocol engine from Macintosh Serial Driver, HFS
-file access, and Toolbox UI adapters. Use bounded buffers and streaming file
-access rather than keeping a whole disk image in RAM. Use asynchronous serial
-I/O with a cooperative event loop, so Cancel and window updates remain usable.
+The ImageWriter II profile enables CTS output gating and DTR receive flow control
+through Serial Driver control code 14. The host asserts DTR/HSKo on connection.
+Actual compatibility still depends on the cable and Apple II serial interface.
 
-The local Apple Serial.h defines standard SerReset baud constants through
-57600, plus driver control code `kSERD115KBaud` (115). That control code's presence
-in newer headers does not guarantee System 7.1 driver/hardware support. Higher
-rates remain optional pending testing. Avoid direct SCC programming initially.
+## Serial bootstrap
 
-An ImageWriter cable setting cannot electrically change a cable into another
-pinout. ADTPro's transport offers hardware flow control on/off. Inspect how its
-GUI checkbox enables hardware handshaking (verified in SerialConfig.java).
-Map it to classic Mac handshake lines for each supported endpoint. Do not assume modern PC RTS/CTS maps directly
-to every Macintosh port. Printer-port ownership may conflict with AppleTalk.
+The **Bootstrap** menu loads the bundled ADTPro 2.1.0 client directly into Apple
+II memory in three stages: monitor loader, ProDOS MLI, and ADTPro client. The
+monitor stage starts at 9600 baud and both computers automatically switch to
+19200 baud for the remaining stages. This is independent of the normal transfer
+speed preference.
 
-## Delivery stages
+1. Connect the Apple II and Macintosh serial ports. Select the correct Macintosh
+   port and cable profile in Preferences.
+2. Start the Apple II without loading an operating system and press Control-Reset
+   to reach the Applesoft `]` prompt.
+3. Type `IN#2` and press Return. Replace `2` with the Super Serial Card slot; the
+   IIc and IIgs modem port use virtual slot 2.
+4. Press Control-A. At `APPLE SSC:` or the blinking `?`, type `14B`. Press Return
+   for a Super Serial Card; doing so is harmless on a IIc or IIgs.
+5. Choose **Bootstrap > Load ADTPro 2.1.0 into memory...**, review the instructions,
+   and click **Send**.
+6. Wait for all three stages to finish. Do not reset the Apple II or change baud
+   rates during the sequence.
+7. To create a permanent boot disk, format a floppy in ADTPro and receive
+   `ADTPRO-2.1.0.DSK` from the Macintosh.
 
-1. Confirm Apple II endpoints and actual cables; target System 7.1 on 68k.
-2. Build a Retro68 Toolbox app with port/speed settings and a serial diagnostic.
-3. Implement directory listing and host-to-Apple-II image transfer using Wide.
-4. Implement Apple-II-to-host transfer, safe file creation, and saved preferences.
-5. Add serial bootstrapping with bundled matching upstream client assets.
+If the Apple II reports a syntax error before loading begins, press Return a few
+times and repeat the setup commands. A Franklin ACE 500 instead needs `PR#2`,
+Control-A `14B`, `PR#0`, and `IN#2`, pressing Return after each command.
 
-Initially prioritize raw DOS-order `.dsk`/`.do` and ProDOS-order `.po` images;
-verify format interpretation against upstream before declaring support. Treat
-2IMG, nibble images, batch operations, and virtual drives as separate scope.
+The bootstrap assets come from ADTPro tag `v_2_1_0`, commit
+`31227fe4c88494f722f5a342d13ad2ff998e0017`. The application changes the
+upstream bootstrap's 115200-baud stages to 19200 because the supported classic
+Mac Serial Manager path does not provide 115200 baud.
 
-## Validation required before release
-
-- Byte-exact protocol tests against fixtures from ADTPro 2.1.0, including
-  corrupt packets, timeouts, retransmissions, cancellation, and resynchronization.
-- A Retro68 cross-build and emulator checks for UI and HFS behavior.
-- Physical Mac-to-Apple-II transfers in both directions with hash comparison,
-  across supported rates and cable profiles.
-- Explicit 115200 and low-speed tests; report unsupported combinations honestly.
-
-## References
-
-- [ADTPro releases and Wide introduction](https://github.com/ADTPro/adtpro/releases)
-- [Pinned ADTPro 2.1.0 serial transport](https://github.com/ADTPro/adtpro/blob/v_2_1_0/src/org/adtpro/transport/SerialTransport.java)
-- [Retro68](https://github.com/autc04/Retro68)
-
-The protocol implementation adapts ADTPro's GPL-2.0-or-later source; see LICENSE
-and its source attribution.
-
-The Bootstrap menu loads the matching ADTPro 2.1.0 serial client directly into
-Apple II memory. It sends the upstream monitor loader, ProDOS MLI, and client in
-three automatic stages. Monitor text starts at the upstream default of 9600
-baud; the bootstrapper then changes both ends to 19200. The original 115200
-defaults are changed in transit because the classic Macintosh Serial Manager/SCC
-path does not offer 115200 baud. The official `ADTPRO-2.1.0.DSK` is copied to `build/disks`, where
-the newly bootstrapped client can receive it to create a bootable floppy.
-
-The bundled payloads and disk image are from the official ADTPro 2.1.0 release
-(tag `v_2_1_0`, commit `31227fe4c88494f722f5a342d13ad2ff998e0017`).
-Their unmodified upstream SHA-256 checksums are:
+Unmodified upstream asset SHA-256 checksums:
 
 - `grub2.dmp`: `0c4e4d125ca70811f6c39f974fae262cf91e12c9a2b8ee054fb2382ca025e186`
 - `PDSpeed.raw`: `4c8d617c4d0b9d00aa7bbbd3f47e860ccbaa1a0ec0fb77f274598f93f4fac47f`
 - `adtpro.raw`: `c676b85df88e5c2115227640123ed7eb54993eded69c667806b5d94e1875ae03`
 - `ADTPRO-2.1.0.DSK`: `e63776271c8025033e0dcfb0b137b21e6597810c4886688fb21180e02bd10048`
 
-### Serial bootstrap procedure
+## Tests
 
-1. Connect the Apple II and Macintosh serial ports. In MacADTPro Preferences,
-   select the correct Macintosh port and cable type. Bootstrap starts at 9600
-   and automatically switches to 19200, regardless of the normal speed setting.
-2. Start the Apple II without loading an operating system. Press Control-Reset
-   to reach the Applesoft `]` prompt.
-3. Type `IN#2` and press Return. Replace `2` with the slot containing the Super
-   Serial Card; the IIc and IIgs modem port use virtual slot 2.
-4. Press Control-A. At `APPLE SSC:` or the blinking `?`, type `14B`. Press
-   Return on a Super Serial Card; doing so is harmless on a IIc/IIgs.
-5. In MacADTPro choose **Bootstrap > Load ADTPro 2.1.0 into memory...**, review
-   the same on-screen instructions, and click **Send**.
-6. Wait for all three status stages. The Apple II first shows monitor text, then
-   the bootstrapper screen with changing progress characters, and finally the
-   ADTPro client. Do not reset it or change baud rates during this sequence.
-7. To make a permanent boot disk, insert and format a floppy in the Apple II,
-   then receive `ADTPRO-2.1.0.DSK` from the Macintosh `disks` folder.
+Portable tests cover Wide parsing and encoding, comparison against code derived
+from ADTPro 2.1.0, DOS/ProDOS sector ordering, image sizing, transfer state and
+retry behavior, and the preferences-file format. Example commands:
 
-If the Apple II reports a syntax error before loading begins, press Return a few
-times and repeat steps 3-5. A Franklin ACE 500 instead needs `PR#2`, Control-A
-`14B`, `PR#0`, and `IN#2`, pressing Return after each command.
+```sh
+mkdir -p build/tests
 
-## Completion correction
+cc -std=c99 -Wall -Wextra -Isrc \
+  tests/wide_test.c src/wide.c -o build/tests/wide_test
+./build/tests/wide_test
 
-The two-block host cap was removed: the Apple II advances by its configured
-BAOCNT, so the host must honor that count, reducing packets only for the final
-partial buffer/40-block boundary as upstream does. The CRC encoder now uses a
-lookup table to reduce 68k encoding time. Boundary and final ACK deadlines allow
-60 seconds for physical disk writes. Completion requires the final ACK for the
-image's block count. A bootable disk alone does not verify all blocks transferred.
-The regression test covers a 280-block transfer with client BAOCNT 10.
+cc -std=c99 -Wall -Wextra -Itests/mac_stubs -Isrc \
+  tests/transfer_test.c src/transfer.c src/wide.c -o build/tests/transfer_test
+./build/tests/transfer_test
 
-The retry build preserves the correct client-requested packet sizes; it does not
-reinstate the incompatible two-block packet cap. Host regression tests verify
-that an invalid ACK does not immediately cancel, retransmission is delayed, and
-the fourth failed attempt stops the state machine.
+cc -std=c99 -Wall -Wextra -Itests/mac_stubs -Isrc \
+  tests/preferences_test.c src/preferences_format.c \
+  -o build/tests/preferences_test
+./build/tests/preferences_test
+```
 
-The resilience build compares against the shared Windows/Linux Java server in
-ADTPro tag `v_2_1_0`, `CommsThread.sendPacketWide`: increasing 250 ms retry
-backoff capped at one second and recovery from unexpected ACKs. The desktop
-server limits attempts to three; this port deliberately permits ten resends for
-classic hardware. Explicit Apple II cancellation remains immediate.
+The transfer regression suite includes a complete 280-block image with a
+client-requested packet size of ten blocks. Wide encoder fixtures cover zero,
+mixed, and trailing-zero data at packet sizes 1, 2, 10, 17, and 40 blocks.
 
-Status and serial diagnostics use a small monochrome offscreen bitmap, copied
-to the window after text drawing completes, to avoid erase/redraw flicker.
-Unchanged text and button titles are not redrawn. This uses original QuickDraw
-and does not require Color QuickDraw.
+## Current limitations and validation
 
-The final-ACK diagnostic build shows each packet's logical block range, encoded
-byte count, and expected ACK block. Retries distinguish invalid ACK values/block
-numbers, malformed frames, and ACK timeouts. The encoder is compared byte for
-byte against packet/CRC code copied from ADTPro 2.1.0's Java server using
-`tests/UpstreamWideReference.java` and `tests/upstream_wide_test.c`; fixtures cover
-zero-filled, mixed, and trailing-zero data with packet sizes 1, 2, 10, 17 and 40
-blocks. A full 143360-byte image always includes all 280 blocks; compression
-does not remove logical blocks and no additional padding packet is required.
+The implementation and portable regression tests pass, and the application
+cross-builds with Retro68. Release validation still requires end-to-end testing
+on physical Macintosh and Apple II hardware across the supported speeds, ports,
+and cable profiles, including byte-for-byte disk comparisons and the complete
+bootstrap sequence.
+
+The following are intentionally outside the current feature set:
+
+- Apple-II-to-Mac uploads and overwrite handling;
+- 2IMG, nibble, and other image containers;
+- custom image folders and subdirectory navigation;
+- arbitrary serial framing or speeds above 19200; and
+- file-based diagnostic logging.
+
+## Protocol and licensing
+
+MacADTPro implements the ADTPro 2.x Wide protocol introduced in ADTPro 2.0.0
+and targets the pinned 2.1.0 client. Protocol code adapted from ADTPro is
+GPL-2.0-or-later; see `LICENSE` and the source-file attribution.
+
+References:
+
+- [ADTPro releases and Wide introduction](https://github.com/ADTPro/adtpro/releases)
+- [ADTPro 2.1.0 serial transport](https://github.com/ADTPro/adtpro/blob/v_2_1_0/src/org/adtpro/transport/SerialTransport.java)
+- [Retro68](https://github.com/autc04/Retro68)
