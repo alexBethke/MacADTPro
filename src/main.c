@@ -19,8 +19,8 @@
 #include "image_folder.h"
 #include "directory.h"
 #include "transfer.h"
+#include "preferences.h"
 
-/* Configuration scaffold. Values currently last only for this session. */
 typedef struct {
     short printerPort;
     short baudIndex;
@@ -592,6 +592,7 @@ static OSErr releaseConnection(SerialConnection *serial, ImageTransfer *transfer
 int main(void)
 {
     Configuration config = {0, 4, 0, {0, 0}};
+    Preferences savedPreferences;
     Configuration preferenceDraft;
     DialogPtr dialog;
     DialogPtr preferences = 0;
@@ -627,6 +628,10 @@ int main(void)
     TEInit();
     InitDialogs(0);
     InitCursor();
+    error = preferencesLoad(&savedPreferences);
+    config.printerPort = savedPreferences.printerPort;
+    config.baudIndex = savedPreferences.baudIndex;
+    config.imageWriterCable = savedPreferences.imageWriterCable;
     menuBar = GetNewMBar(128);
     if (!menuBar) return 1;
     SetMenuBar(menuBar);
@@ -865,6 +870,14 @@ int main(void)
                 config.printerPort = preferenceDraft.printerPort;
                 config.baudIndex = preferenceDraft.baudIndex;
                 config.imageWriterCable = preferenceDraft.imageWriterCable;
+                savedPreferences.printerPort = config.printerPort;
+                savedPreferences.baudIndex = config.baudIndex;
+                savedPreferences.imageWriterCable = config.imageWriterCable;
+                error = preferencesSave(&savedPreferences);
+                if (error) {
+                    sprintf(status, "Cannot save preferences (Mac error %d).", error);
+                    setText(dialog, 12, status);
+                }
                 DisposeDialog(preferences);
                 preferences = 0;
             } else if (item == 2) {

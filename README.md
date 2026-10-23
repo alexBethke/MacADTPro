@@ -18,7 +18,8 @@ cmake --build build
 
 Adjust the toolchain path for other installations. Retro68 produces
 `build/MacADTPro.bin` (MacBinary) and `build/MacADTPro.dsk` for transfer or emulator
-use. Preferences currently last for the session only. The original configuration
+use. Serial port, baud rate, and cable preferences are saved in a versioned
+`MacADTPro Prefs` file in the System Preferences folder. The original configuration
 UI was tested successfully by the user. The serial diagnostic build has passed
 cross-compilation; physical serial I/O still needs testing.
 
@@ -146,8 +147,8 @@ cc -std=c99 -Wall -Wextra -Itests/mac_stubs -Isrc tests/transfer_test.c src/tran
 
 Keep framing fixed at 8 data bits, no parity, one stop bit, matching ADTPro.
 Disable XON/XOFF for binary transfers. Avoid exposing arbitrary framing options.
-Persist preferences in a versioned preferences file, using APIs appropriate to the
-minimum supported System version.
+Preferences use a versioned, checksummed file in the System Preferences folder;
+missing or invalid files fall back to the documented defaults.
 
 Advanced timeout/retry and payload controls should initially follow the upstream
 protocol. At 300 baud, deadlines must allow actual packet transmission time;
