@@ -37,6 +37,11 @@ static void ack(ImageTransfer *t, SerialConnection *s, unsigned char code, unsig
     p.command = 0xcb; p.length = 3; p.payload[0] = code;
     p.payload[1] = next; p.payload[2] = next >> 8;
     assert(!transferCommand(t, s, &folder, &p, &handled)); assert(handled);
+    if (strstr(t->message, "waiting for Apple II final status")) {
+        memset(&p, 0, sizeof(p));
+        p.command = 0xd9; p.length = 1; p.payload[0] = 0;
+        assert(!transferCommand(t, s, &folder, &p, &handled)); assert(handled);
+    }
 }
 
 /* Model RECVWIDE's writes/skips and UNDIFFWide separately, using the
@@ -234,6 +239,22 @@ int main(void)
             assert(!transferPoll(&t, &s) && sends == previousSends);
         }
     }
+    /* The last block ACK is followed by a separate final disk-write report. */
+    mockBlocks = 1;
+    p.command = 0xc7; p.length = 9; p.payload[8] = 1;
+    assert(!transferCommand(&t, &s, &folder, &p, &handled));
+    ack(&t, &s, 6, 0);
+    assert(!transferPoll(&t, &s));
+    {
+        WideParser lastAck = {0};
+        lastAck.command = 0xcb; lastAck.length = 3;
+        lastAck.payload[0] = 6; lastAck.payload[1] = 1;
+        assert(!transferCommand(&t, &s, &folder, &lastAck, &handled) && handled);
+        assert(t.state && strstr(t.message, "waiting for Apple II final status"));
+        ticks += 7201;
+        assert(!transferPoll(&t, &s) && !t.state);
+        assert(strstr(t.message, "Timed out"));
+    }
     /* Full 140K image: last 130 blocks are empty. Exercise every BAOCNT.
      * Verify reconstructed bytes and the Apple client's actual ACK envelopes. */
     sparseImage = 1;
@@ -270,12 +291,20 @@ int main(void)
             assert(!transferCommand(&t, &s, &folder, &incoming, &handled) && handled);
             ++packets;
         }
+        {
+            WideParser final = {0};
+            final.command = 0xd9;
+            final.length = 1;
+            final.payload[0] = 0;
+            assert(strstr(t.message, "waiting for Apple II final status"));
+            assert(!transferCommand(&t, &s, &folder, &final, &handled) && handled);
+        }
         assert(packets && !t.state && t.block == 280 && !t.image.ref);
         assert(strstr(t.message, "completed"));
         unsigned previousSends = sends;
         assert(!transferPoll(&t, &s) && sends == previousSends);
     }
-    puts("Full-image empty tails decode correctly for all 40 packet sizes; final ACK 280 completes without padding");
+    puts("Full-image empty tails decode correctly for all 40 packet sizes; final status completes block 280 without padding");
     puts("Image transfer state tests passed");
     return 0;
 }

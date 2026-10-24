@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
-enum { IDLE, INITIAL_ACK, SEND_NEXT, PACKET_ACK, RESEND };
+enum { IDLE, INITIAL_ACK, SEND_NEXT, PACKET_ACK, RESEND, FINAL_REPORT };
 /* More forgiving than the desktop server on slow classic hardware. */
 #define MAX_PACKET_RETRIES 10
 #define ACK_TIMEOUT_TICKS 7200UL
@@ -73,6 +73,15 @@ OSErr transferCommand(ImageTransfer *t, SerialConnection *s,
     unsigned end;
     OSErr error;
     *handled = false;
+    if (p->command == 0xd9 && t->state == FINAL_REPORT) {
+        *handled = true;
+        if (p->length == 1 && p->payload[0] == 0) {
+            strcpy(t->message, "Image transfer completed and verified by Apple II.");
+            return transferCancel(t);
+        }
+        strcpy(t->message, "Apple II reported errors after writing the disk.");
+        return transferCancel(t);
+    }
     if (p->command == 0xd8 && t->state) {
         *handled = true;
         strcpy(t->message, "Image transfer cancelled by Apple II.");
@@ -103,8 +112,10 @@ OSErr transferCommand(ImageTransfer *t, SerialConnection *s,
             snprintf(t->message, sizeof(t->message), "Acknowledged block %u/%u. Packet retries: 0.",
                      t->block, t->image.blocks);
             if (t->block == t->image.blocks) {
-                strcpy(t->message, "Image transfer completed and acknowledged.");
-                return transferCancel(t);
+                t->state = FINAL_REPORT;
+                t->lastActivity = TickCount();
+                strcpy(t->message, "All blocks acknowledged; waiting for Apple II final status.");
+                return noErr;
             }
             t->state = SEND_NEXT;
         } else {
@@ -153,6 +164,12 @@ OSErr transferPoll(ImageTransfer *t, SerialConnection *s)
     OSErr error;
     if (!t->state) return noErr;
     if (s->writing) { t->lastActivity = TickCount(); return noErr; }
+    if (t->state == FINAL_REPORT) {
+        if ((unsigned long)(TickCount() - t->lastActivity) <= ACK_TIMEOUT_TICKS)
+            return noErr;
+        strcpy(t->message, "Timed out waiting for Apple II final status.");
+        return transferCancel(t);
+    }
     if (t->state == INITIAL_ACK || t->state == PACKET_ACK) {
         /* The client does not read another packet during physical disk writes.
          * Resending on silence here can put a duplicate in its next buffer. */

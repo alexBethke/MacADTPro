@@ -1011,8 +1011,15 @@ int main(void)
                                     highlightFolderImage(dialog, transfer.imageName);
                                 if ((wasActive && !transfer.state) ||
                                     (wasUploadActive && !upload.active)) {
+                                    Boolean successful = uploadHandled
+                                        ? strstr(upload.message, "completed") != 0
+                                        : strstr(transfer.message, "completed") != 0;
                                     if (wasUploadActive && !upload.active && !error)
                                         refreshFolderList(dialog, &config.imageFolder);
+                                    if (successful && !error) {
+                                        setText(dialog, 13, "Disconnect");
+                                        continue;
+                                    }
                                     error = releaseConnection(&serial, &transfer, &upload);
                                     connected = false;
                                     if (preferences) enableSettings(preferences, true);

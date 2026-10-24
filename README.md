@@ -62,9 +62,9 @@ Preferences are locked while connected.
 
 Click **Connect**, then choose Receive in the Apple II ADTPro client. Select an
 image from the client directory or enter its name and choose the destination
-disk. A completed transfer, cancellation, timeout, or error releases the serial
-port; reconnect before starting another operation. The same button changes to
-Disconnect while a connection is active.
+disk. After a successful transfer, the serial connection remains open for
+another operation. Cancellation, timeout, or error releases the serial port.
+The same button changes to Disconnect while a connection is active.
 
 To copy a disk from the Apple II to the Macintosh, choose Send in the Apple II
 client, enter a destination name, and select the source disk. MacADTPro refuses
@@ -106,8 +106,9 @@ splits packets at 40-block boundaries, and sends a smaller final packet when
 needed. DOS-order conversion is also performed one track at a time.
 
 Wide envelopes, payload XOR checksums, compressed packets, and CRC-CCITT values
-are validated or generated with bounded buffers. Completion is reported only
-after the final client ACK for the image's full block count.
+are validated or generated with bounded buffers. After the final block ACK,
+MacADTPro waits for the Apple II's final disk-write status before reporting
+completion.
 
 Malformed or unexpected acknowledgements and checksum failures retry the current
 packet up to ten times. Retry delay increases from 250 ms to one second, and a
