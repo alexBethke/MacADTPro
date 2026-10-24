@@ -64,7 +64,8 @@ Click **Connect**, then choose Receive in the Apple II ADTPro client. Select an
 image from the client directory or enter its name and choose the destination
 disk. After a successful transfer, the serial connection remains open for
 another operation. Cancellation, timeout, or error releases the serial port.
-The same button changes to Disconnect while a connection is active.
+The same button changes to Disconnect while a connection is active. Clicking
+or interacting with the main window does not disconnect the session.
 
 To copy a disk from the Apple II to the Macintosh, choose Send in the Apple II
 client, enter a destination name, and select the source disk. MacADTPro refuses

@@ -608,7 +608,7 @@ int main(void)
     WideParser parser;
     EventRecord event;
     DialogPtr eventDialog;
-    Boolean connected = false, quit = false, quitRequested, releasedByClick;
+    Boolean connected = false, quit = false, quitRequested;
     Boolean closePreferences, dispatchDialog;
     short menuAction;
     unsigned long received = 0, commands = 0, lastByte = 0;
@@ -680,7 +680,6 @@ int main(void)
         menuAction = kMenuNone;
         closePreferences = false;
         dispatchDialog = true;
-        releasedByClick = false;
         if (WaitNextEvent(everyEvent, &event, connected ? 1 : 6, 0)) {
             if (event.what == activateEvt && (WindowPtr)event.message == (WindowPtr)dialog &&
                 (event.modifiers & activeFlag) && !folderError) {
@@ -747,23 +746,6 @@ int main(void)
                 if (part == inSysWindow) {
                     SystemClick(&event, clickedWindow);
                     dispatchDialog = false;
-                }
-                if (part == inContent && clickedWindow == (WindowPtr)dialog && connected) {
-                    /* Release before DialogSelect can enter control tracking. */
-                    error = releaseConnection(&serial, &transfer, &upload);
-                    bootstrapCancel(&bootstrap);
-                    connected = false;
-                    awaitingDirectory = false;
-                    wideReset(&parser);
-                    releasedByClick = true;
-                    if (preferences) enableSettings(preferences, true);
-                    setText(dialog, 13, "Connect");
-                    if (error) {
-                        sprintf(status, "Cleanup error %d. Quit or Disconnect to retry.", error);
-                        setText(dialog, 12, status);
-                        continue;
-                    }
-                    setText(dialog, 12, "Disconnected by window click.");
                 }
                 if (part == inContent && clickedWindow == (WindowPtr)dialog && folderList) {
                     Point local = event.where;
@@ -906,8 +888,7 @@ int main(void)
             quit = true;
             break;
         }
-        if (item == 13 && (!folderError || bootstrapActive(&bootstrap)) &&
-            !releasedByClick) {
+        if (item == 13 && (!folderError || bootstrapActive(&bootstrap))) {
             if (connected) {
                 bootstrapCancel(&bootstrap);
                 error = releaseConnection(&serial, &transfer, &upload);
