@@ -124,14 +124,14 @@ resource 'DITL' (129) {
 };
 
 resource 'DLOG' (130) {
-    {62, 76, 306, 436}, noGrowDocProc, invisible, goAway, 0, 130,
+    {50, 76, 318, 436}, noGrowDocProc, invisible, goAway, 0, 130,
     "Preferences", centerMainScreen
 };
 
 resource 'DITL' (130) {
     {
-        {204, 264, 226, 344}, Button {enabled, "OK"};
-        {204, 168, 226, 248}, Button {enabled, "Cancel"};
+        {228, 264, 250, 344}, Button {enabled, "OK"};
+        {228, 168, 250, 248}, Button {enabled, "Cancel"};
         {12, 16, 30, 104}, StaticText {disabled, "Serial port"};
         {12, 120, 30, 224}, RadioButton {enabled, ""};
         {12, 244, 30, 344}, RadioButton {enabled, ""};
@@ -142,7 +142,8 @@ resource 'DITL' (130) {
         {92, 16, 110, 104}, RadioButton {enabled, ""};
         {92, 120, 110, 224}, RadioButton {enabled, ""};
         {124, 16, 144, 344}, CheckBox {enabled, "ImageWriter II cable"};
-        {154, 16, 194, 344}, StaticText {disabled, ""};
+        {148, 16, 168, 344}, CheckBox {enabled, "Debug mode"};
+        {178, 16, 218, 344}, StaticText {disabled, ""};
         {0, 0, 0, 0}, StaticText {disabled, ""};
     }
 };

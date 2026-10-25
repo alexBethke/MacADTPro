@@ -67,9 +67,10 @@ Preferences are locked while connected.
 
 Click **Connect**, then choose Receive in the Apple II ADTPro client. Select an
 image from the client directory or enter its name and choose the destination
-disk. A completed, cancelled, timed-out, or failed transfer releases the serial
-port and returns the button to Connect. Click Connect before starting another
-operation. The button says Disconnect only while a connection is active.
+disk. A completed Mac-to-Apple-II transfer leaves the serial connection open
+for the next operation, and the button continues to say Disconnect. A
+cancelled, timed-out, or failed transfer releases the serial port and returns
+the button to Connect. The button says Disconnect only while a connection is active.
 Clicking or interacting elsewhere in the main window does not disconnect the
 session.
 
@@ -77,7 +78,7 @@ To copy a disk from the Apple II to the Macintosh, choose Send in the Apple II
 client, enter a destination name, and select the source disk. MacADTPro refuses
 to overwrite an existing image. Incoming data is written to a preallocated
 temporary file and renamed to the requested destination only after every block,
-CRC, and the client's final status have succeeded. Cancellation, timeout, an
+CRC, and acknowledgement have succeeded. Cancellation, timeout, an
 I/O error, or a failed transfer removes the temporary file. Uploads time out
 after five minutes without serial activity.
 
@@ -113,9 +114,8 @@ splits packets at 40-block boundaries, and sends a smaller final packet when
 needed. DOS-order conversion is also performed one track at a time.
 
 Wide envelopes, payload XOR checksums, compressed packets, and CRC-CCITT values
-are validated or generated with bounded buffers. After the final block ACK,
-MacADTPro waits for the Apple II's final disk-write status before reporting
-completion.
+are validated or generated with bounded buffers. The Apple II's ACK for the
+actual final block reports completion.
 
 Malformed or unexpected acknowledgements and checksum failures retry the current
 packet up to ten times. Retry delay increases from 250 ms to one second, and a

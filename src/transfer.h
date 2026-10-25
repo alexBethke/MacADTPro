@@ -9,6 +9,7 @@ typedef struct {
     unsigned char packet[40970];
     unsigned short packetLength, block, chunk, preferred;
     short state, retries;
+    Boolean completed;
     unsigned long lastActivity;
     char imageName[32];
     char retryReason[64];

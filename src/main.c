@@ -28,6 +28,7 @@ typedef struct {
     short printerPort;
     short baudIndex;
     short imageWriterCable;
+    Boolean debugMode;
     ImageFolder imageFolder;
 } Configuration;
 
@@ -62,7 +63,7 @@ static void drawRainbowInRect(const Rect *bounds)
     ReleaseResource((Handle)picture);
 }
 
-static void drawRainbow(DialogPtr dialog)
+static void drawRainbow(DialogPtr dialog, const Configuration *config)
 {
     Rect bounds;
     SetRect(&bounds, 188, 205, 380, 325);
@@ -359,7 +360,7 @@ static pascal void drawStatus(DialogPtr dialog, short item)
     SetPort(savedPort);
 }
 
-static void initStatusDrawing(DialogPtr dialog)
+static void initStatusDrawing(DialogPtr dialog, const Configuration *config)
 {
     short item, type, index;
     Handle handle;
@@ -400,10 +401,21 @@ static void initStatusDrawing(DialogPtr dialog)
     SetPortBits(&statusBits);
     PortSize(kStatusBufferWidth, kStatusBufferHeight);
     SetPort(savedPort);
+    if (!config->debugMode) HideDialogItem(dialog, 15);
     statusDrawingReady = true;
 }
 
-static void setActionButton(DialogPtr dialog, const unsigned char *title)
+static void setDiagnosticVisibility(DialogPtr dialog, Boolean visible)
+{
+    if (visible) {
+        ShowDialogItem(dialog, 15);
+        drawStatus(dialog, 15);
+    } else {
+        HideDialogItem(dialog, 15);
+    }
+}
+
+static void setActionButton(DialogPtr dialog, const unsigned char *title, const Configuration *config)
 {
     enum { kActionButtonRight = 364, kActionButtonWidth = 94,
            kBootstrapButtonWidth = 132 };
@@ -435,14 +447,15 @@ static void setActionButton(DialogPtr dialog, const unsigned char *title)
     SetDialogItem(dialog, 18, userItem | itemDisable, frameHandle, &frame);
     /* The button sits over the picture, so restore that background before
        drawing the resized control and a fresh, uniformly black outline. */
-    drawRainbow(dialog);
+    drawRainbow(dialog, config);
     drawStatus(dialog, 12);
-    drawStatus(dialog, 15);
+    /* Only redraw field 15 when debug mode is on */
+    if (config->debugMode) drawStatus(dialog, 15);
     Draw1Control((ControlHandle)handle);
     drawDefaultButton(dialog, 18);
 }
 
-static void setText(DialogPtr dialog, short item, const char *text)
+static void setText(DialogPtr dialog, short item, const char *text, const Configuration *config)
 {
     short type;
     Handle handle;
@@ -452,7 +465,14 @@ static void setText(DialogPtr dialog, short item, const char *text)
     if (length > 255) length = 255;
     value[0] = length;
     memcpy(value + 1, text, length);
-    if (statusDrawingReady && (item == 12 || item == 14 || item == 15)) {
+    if (statusDrawingReady && (item == 12 || item == 14)) {
+        unsigned char *cached = statusValues[statusIndex(item)];
+        if (cached[0] == value[0] && !memcmp(cached + 1, value + 1, length)) return;
+        memcpy(cached, value, length + 1);
+        drawStatus(dialog, item);
+        return;
+    }
+    if (statusDrawingReady && item == 15 && config->debugMode) {
         unsigned char *cached = statusValues[statusIndex(item)];
         if (cached[0] == value[0] && !memcmp(cached + 1, value + 1, length)) return;
         memcpy(cached, value, length + 1);
@@ -464,7 +484,7 @@ static void setText(DialogPtr dialog, short item, const char *text)
     {
         GetControlTitle((ControlHandle)handle, previous);
         if (previous[0] != value[0] || memcmp(previous + 1, value + 1, length)) {
-            if (item == 13) setActionButton(dialog, value);
+            if (item == 13) setActionButton(dialog, value, config);
             else SetControlTitle((ControlHandle)handle, value);
         }
     } else {
@@ -473,24 +493,28 @@ static void setText(DialogPtr dialog, short item, const char *text)
     }
 }
 
-static void setTransferStatus(DialogPtr dialog, const ImageTransfer *transfer)
+static void setTransferStatus(DialogPtr dialog, const ImageTransfer *transfer, const Configuration *config)
 {
-    setText(dialog, 12, transfer->message);
+    if (config->debugMode) {
+        setText(dialog, 12, transfer->message, config);
+    }
 }
 
 /* Keep the Control Manager state and the pixels in sync after another window
    has covered the main dialog or a serial teardown has changed state. */
-static void showConnectButton(DialogPtr dialog)
+static void showConnectButton(DialogPtr dialog, const Configuration *config)
 {
     short type;
     Handle handle;
     Rect bounds;
-    setText(dialog, 13, "Connect");
+    setText(dialog, 13, "Connect", config);
     GetDialogItem(dialog, 13, &type, &handle, &bounds);
     SetPort((GrafPtr)dialog);
     HiliteControl((ControlHandle)handle, 0);
     Draw1Control((ControlHandle)handle);
     drawDefaultButton(dialog, 18);
+    /* Only redraw field 15 when debug mode is on */
+    if (config->debugMode) drawStatus(dialog, 15);
 }
 
 static void drawPreferenceGeneva(DialogPtr dialog)
@@ -517,7 +541,7 @@ static void drawPreferenceGeneva(DialogPtr dialog)
         MoveTo(bounds.left + 2, bounds.top + 12);
         DrawText(labels[i], 0, strlen(labels[i]));
     }
-    GetDialogItem(dialog, 13, &type, &handle, &bounds);
+    GetDialogItem(dialog, 14, &type, &handle, &bounds);
     EraseRect(&bounds);
     TETextBox(help, sizeof(help) - 1, &bounds, teJustLeft);
     TextFont(systemFont);
@@ -527,7 +551,7 @@ static void drawPreferenceGeneva(DialogPtr dialog)
 
 enum {
     kPreferencesWidth = 360,
-    kPreferencesHeight = 244,
+    kPreferencesHeight = 268,
     kPreferencesRowBytes = ((kPreferencesWidth + 15) / 16) * 2
 };
 static short preferencesPixels[kPreferencesRowBytes * kPreferencesHeight / 2];
@@ -578,7 +602,7 @@ static void copyPreferencesToWindow(DialogPtr dialog)
 
 static void enableSettings(DialogPtr dialog, short enabled)
 {
-    static const short items[] = {4, 5, 7, 8, 9, 10, 11, 12};
+    static const short items[] = {4, 5, 7, 8, 9, 10, 11, 12, 13};
     short i, type;
     Handle handle;
     Rect bounds;
@@ -596,6 +620,7 @@ static void setPreferenceControls(DialogPtr dialog, const Configuration *config)
     setControl(dialog, 5, config->printerPort);
     for (i = 0; i < 5; ++i) setControl(dialog, 7 + i, config->baudIndex == i);
     setControl(dialog, 12, config->imageWriterCable);
+    setControl(dialog, 13, config->debugMode);
     drawPreferenceGeneva(dialog);
 }
 
@@ -654,6 +679,7 @@ int main(void)
     config.printerPort = savedPreferences.printerPort;
     config.baudIndex = savedPreferences.baudIndex;
     config.imageWriterCable = savedPreferences.imageWriterCable;
+    config.debugMode = savedPreferences.debugMode;
     menuBar = GetNewMBar(128);
     if (!menuBar) return 1;
     SetMenuBar(menuBar);
@@ -661,9 +687,9 @@ int main(void)
     dialog = GetNewDialog(128, 0, (WindowPtr)-1);
     if (!dialog) return 1;
     installDefaultButton(dialog, 18);
-    initStatusDrawing(dialog);
+    initStatusDrawing(dialog, &config);
     SetPort((GrafPtr)dialog);
-    drawRainbow(dialog);
+    drawRainbow(dialog, &config);
     DrawDialog(dialog);
     if (!initFolderList(dialog)) {
         DisposeDialog(dialog);
@@ -672,7 +698,7 @@ int main(void)
     folderError = imageFolderDefault(&config.imageFolder);
     if (folderError) {
         sprintf(status, "Cannot use disks beside the app (Mac error %d).", folderError);
-        setText(dialog, 14, status);
+        setText(dialog, 14, status, &config);
         {
             short type;
             Handle handle;
@@ -681,11 +707,11 @@ int main(void)
             HiliteControl((ControlHandle)handle, 255);
         }
     } else {
-        setText(dialog, 14, "Image folder: disks (beside this application)");
+        setText(dialog, 14, "Image folder: disks (beside this application)", &config);
         error = refreshFolderList(dialog, &config.imageFolder);
         if (error) {
             sprintf(status, "Cannot list disks folder (Mac error %d).", error);
-            setText(dialog, 12, status);
+            setText(dialog, 12, status, &config);
         }
     }
 
@@ -712,7 +738,7 @@ int main(void)
                 error = refreshFolderList(dialog, &config.imageFolder);
                 if (error) {
                     sprintf(status, "Cannot refresh disks folder (Mac error %d).", error);
-                    setText(dialog, 12, status);
+                    setText(dialog, 12, status, &config);
                 }
                 if (highlightedImage[0])
                     selectFolderImage(dialog, highlightedImage);
@@ -791,13 +817,13 @@ int main(void)
                         wideReset(&parser);
                         bootstrapCancel(&bootstrap);
                         if (preferences) enableSettings(preferences, true);
-                        showConnectButton(dialog);
+                        showConnectButton(dialog, &config);
                         error = releaseConnection(&serial, &transfer, &upload);
                         releasedByActionClick = true;
                         if (error) {
                             sprintf(status, "Disconnect cleanup error %d. Click Connect to retry.", error);
-                            setText(dialog, 12, status);
-                        } else setText(dialog, 12, "Disconnected.");
+                            setText(dialog, 12, status, &config);
+                        } else setText(dialog, 12, "Disconnected.", &config);
                     }
                 }
                 if (part == inContent && clickedWindow == (WindowPtr)dialog && folderList) {
@@ -819,7 +845,7 @@ int main(void)
             if (event.what == updateEvt && (WindowPtr)event.message == (WindowPtr)dialog) {
                 SetPort((GrafPtr)dialog);
                 BeginUpdate((WindowPtr)dialog);
-                drawRainbow(dialog);
+                drawRainbow(dialog, &config);
                 DrawDialog(dialog);
                 TextFont(kFontIDGeneva);
                 TextSize(9);
@@ -871,7 +897,7 @@ int main(void)
                 preferenceDraft = config;
                 preferences = GetNewDialog(130, 0, (WindowPtr)-1);
                 if (preferences) {
-                    installDefaultButton(preferences, 14);
+                    installDefaultButton(preferences, 15);
                     setPreferenceControls(preferences, &preferenceDraft);
                     enableSettings(preferences, !connected);
                     if (renderPreferencesOffscreen(preferences)) {
@@ -901,7 +927,7 @@ int main(void)
             lastBootstrapState = BOOTSTRAP_IDLE;
             if (error) {
                 sprintf(status, "Cannot start bootstrap (Mac error %d).", error);
-                setText(dialog, 12, status);
+                setText(dialog, 12, status, &config);
                 serialClose(&serial);
             } else {
                 short type;
@@ -910,8 +936,8 @@ int main(void)
                 GetDialogItem(dialog, 13, &type, &handle, &bounds);
                 HiliteControl((ControlHandle)handle, 0);
                 if (preferences) enableSettings(preferences, false);
-                setText(dialog, 13, "Cancel");
-                setText(dialog, 12, bootstrap.message);
+                setText(dialog, 13, "Cancel", &config);
+                setText(dialog, 12, bootstrap.message, &config);
             }
         }
         if (eventDialog == preferences && preferences) {
@@ -919,19 +945,24 @@ int main(void)
                 if (item == 4 || item == 5) preferenceDraft.printerPort = item == 5;
                 if (item >= 7 && item <= 11) preferenceDraft.baudIndex = item - 7;
                 if (item == 12) preferenceDraft.imageWriterCable = !preferenceDraft.imageWriterCable;
+                if (item == 13) preferenceDraft.debugMode = !preferenceDraft.debugMode;
                 setPreferenceControls(preferences, &preferenceDraft);
             }
             if (item == 1) {
                 config.printerPort = preferenceDraft.printerPort;
                 config.baudIndex = preferenceDraft.baudIndex;
                 config.imageWriterCable = preferenceDraft.imageWriterCable;
+                if (config.debugMode != preferenceDraft.debugMode)
+                    setDiagnosticVisibility(dialog, preferenceDraft.debugMode);
+                config.debugMode = preferenceDraft.debugMode;
                 savedPreferences.printerPort = config.printerPort;
                 savedPreferences.baudIndex = config.baudIndex;
                 savedPreferences.imageWriterCable = config.imageWriterCable;
+                savedPreferences.debugMode = config.debugMode;
                 error = preferencesSave(&savedPreferences);
                 if (error) {
                     sprintf(status, "Cannot save preferences (Mac error %d).", error);
-                    setText(dialog, 12, status);
+                    setText(dialog, 12, status, &config);
                 }
                 DisposeDialog(preferences);
                 preferences = 0;
@@ -954,9 +985,9 @@ int main(void)
                 connected = false;
                 awaitingDirectory = false;
                 sprintf(status, "Serial close failed (Mac error %d). Quit again to retry.", error);
-                setText(dialog, 12, status);
+                setText(dialog, 12, status, &config);
                 if (preferences) enableSettings(preferences, true);
-                showConnectButton(dialog);
+                showConnectButton(dialog, &config);
                 continue;
             }
             quit = true;
@@ -971,8 +1002,8 @@ int main(void)
                 awaitingDirectory = false;
                 if (error) {
                     sprintf(status, "Serial close failed (Mac error %d).", error);
-                    setText(dialog, 12, status);
-                } else setText(dialog, 12, "Disconnected.");
+                    setText(dialog, 12, status, &config);
+                } else setText(dialog, 12, "Disconnected.", &config);
             } else {
                 error = serialOpen(&serial, config.printerPort, config.baudIndex,
                                    config.imageWriterCable);
@@ -982,10 +1013,10 @@ int main(void)
                 awaitingDirectory = false;
                 if (error) sprintf(status, "Cannot open serial port (Mac error %d).", error);
                 else strcpy(status, "Connected. Waiting for Apple II commands.");
-                setText(dialog, 12, status);
+                setText(dialog, 12, status, &config);
             }
             if (preferences) enableSettings(preferences, !connected);
-            setText(dialog, 13, connected ? "Disconnect" : "Connect");
+            setText(dialog, 13, connected ? "Disconnect" : "Connect", &config);
         }
         if (connected) {
             long count = sizeof(bytes), n;
@@ -994,9 +1025,9 @@ int main(void)
                 error = bootstrapPoll(&bootstrap, &serial);
             if (bootstrap.state != lastBootstrapState) {
                 lastBootstrapState = bootstrap.state;
-                setText(dialog, 12, bootstrap.message);
+                setText(dialog, 12, bootstrap.message, &config);
                 if (bootstrap.state == BOOTSTRAP_DONE)
-                    setText(dialog, 13, "Disconnect");
+                    setText(dialog, 13, "Disconnect", &config);
             }
             if (awaitingDirectory && serial.writing) ackStarted = TickCount();
             if (!error) error = serialRead(&serial, bytes, &count);
@@ -1007,8 +1038,8 @@ int main(void)
                 bootstrapCancel(&bootstrap);
                 connected = false;
                 if (preferences) enableSettings(preferences, true);
-                showConnectButton(dialog);
-                setText(dialog, 12, status);
+                showConnectButton(dialog, &config);
+                setText(dialog, 12, status, &config);
             } else {
                 for (n = 0; n < count; ++n) {
                     Boolean uploadByteHandled;
@@ -1019,13 +1050,13 @@ int main(void)
                     error = uploadFeed(&upload, &serial, bytes[n],
                                        &uploadByteHandled);
                     if (uploadByteHandled) {
-                        setText(dialog, 12, upload.message);
+                        setText(dialog, 12, upload.message, &config);
                         if (error || (wasUploadActive && !upload.active)) {
                             OSErr cleanupError = releaseConnection(&serial, &transfer,
                                                                    &upload);
                             connected = false;
                             if (preferences) enableSettings(preferences, true);
-                            showConnectButton(dialog);
+                            showConnectButton(dialog, &config);
                             if (cleanupError && !error) error = cleanupError;
                         }
                         if (error || !connected) break;
@@ -1060,7 +1091,7 @@ int main(void)
                                 awaitingDirectory = false;
                                 if (!bootstrapHandled)
                                     setText(dialog, 12, uploadHandled
-                                            ? upload.message : transfer.message);
+                                            ? upload.message : transfer.message, &config);
                                 if (upload.active && !wasUploadActive)
                                     highlightFolderImage(dialog, upload.imageName);
                                 if (!bootstrapHandled && transfer.state && !wasActive)
@@ -1069,13 +1100,37 @@ int main(void)
                                     (wasUploadActive && !upload.active)) {
                                     if (wasUploadActive && !upload.active && !error)
                                         refreshFolderList(dialog, &config.imageFolder);
+                                    if (wasActive && transfer.completed && !error) {
+                                        /* A completed client operation can leave the
+                                           classic serial drivers usable but stale.
+                                           Reset them while preserving the connected UI. */
+                                        error = serialClose(&serial);
+                                        if (!error)
+                                            error = serialOpen(&serial, config.printerPort,
+                                                               config.baudIndex,
+                                                               config.imageWriterCable);
+                                        wideReset(&parser);
+                                        if (error) {
+                                            connected = false;
+                                            if (preferences) enableSettings(preferences, true);
+                                            showConnectButton(dialog, &config);
+                                            sprintf(status, "Transfer completed; serial reset failed (Mac error %d).", error);
+                                            setText(dialog, 12, status, &config);
+                                        } else {
+                                            setText(dialog, 13, "Disconnect", &config);
+                                            setText(dialog, 12,
+                                                    "Image transfer completed. Ready for another operation.",
+                                                    &config);
+                                        }
+                                        break;
+                                    }
                                     error = releaseConnection(&serial, &transfer, &upload);
                                     connected = false;
                                     if (preferences) enableSettings(preferences, true);
-                                    showConnectButton(dialog);
+                                    showConnectButton(dialog, &config);
                                     if (error) {
                                         sprintf(status, "Transfer stopped; cleanup error %d. Quit to retry.", error);
-                                        setText(dialog, 12, status);
+                                        setText(dialog, 12, status, &config);
                                     }
                                     break;
                                 }
@@ -1084,7 +1139,7 @@ int main(void)
                             if (transfer.state) {
                                 /* Unexpected/noisy commands must not end an image transfer. */
                                 error = transferRetry(&transfer);
-                                setTransferStatus(dialog, &transfer);
+                                setTransferStatus(dialog, &transfer, &config);
                                 if (error || !transfer.state) break;
                                 continue;
                             }
@@ -1094,7 +1149,7 @@ int main(void)
                             error = directoryPage(&config.imageFolder, parser.payload,
                                                   parser.length, directoryData, &directoryNumber);
                             if (error) { sprintf(status, "Cannot read disks folder (Mac error %d).", error);
-                                setText(dialog, 12, status); error = noErr; }
+                                setText(dialog, 12, status, &config); error = noErr; }
                             else {
                                 directoryLength = wideEncode(directoryData, sizeof(directoryData),
                                     directoryNumber, directoryPacket, sizeof(directoryPacket));
@@ -1104,7 +1159,7 @@ int main(void)
                                 awaitingDirectory = true;
                                 directoryRetries = 0;
                                 ackStarted = TickCount();
-                                setText(dialog, 12, "Sending directory of disks. Waiting for Apple II acknowledgement.");
+                                setText(dialog, 12, "Sending directory of disks. Waiting for Apple II acknowledgement.", &config);
                                 continue;
                             }
                         }
@@ -1112,17 +1167,17 @@ int main(void)
                             unsigned short next = parser.payload[1] | ((unsigned short)parser.payload[2] << 8);
                             if (parser.length == 3 && parser.payload[0] == 6 && next == directoryNumber + 2) {
                                 awaitingDirectory = false;
-                                setText(dialog, 12, "Directory acknowledged by Apple II.");
+                                setText(dialog, 12, "Directory acknowledged by Apple II.", &config);
                             } else if (parser.length == 3 && parser.payload[0] == 0x18) {
                                 awaitingDirectory = false;
-                                setText(dialog, 12, "Directory cancelled by Apple II.");
+                                setText(dialog, 12, "Directory cancelled by Apple II.", &config);
                             } else if (++directoryRetries <= 3 && !serial.writing) {
                                 error = serialSend(&serial, directoryPacket, directoryLength);
                                 ackStarted = TickCount();
-                                setText(dialog, 12, "Retrying directory packet.");
+                                setText(dialog, 12, "Retrying directory packet.", &config);
                             } else {
                                 awaitingDirectory = false;
-                                setText(dialog, 12, "Directory failed after retries.");
+                                setText(dialog, 12, "Directory failed after retries.", &config);
                             }
                             continue;
                         }
@@ -1135,19 +1190,19 @@ int main(void)
                         }
                         sprintf(status, "Unsupported command $%02X.\rBytes: %lu  Commands: %lu",
                                 parser.command, received, commands);
-                        setText(dialog, 12, status);
+                        setText(dialog, 12, status, &config);
                     } else if (result == WIDE_BAD_HEADER || result == WIDE_BAD_PAYLOAD) {
                         if (transfer.state) {
                             error = transferRetry(&transfer);
-                            setTransferStatus(dialog, &transfer);
+                            setTransferStatus(dialog, &transfer, &config);
                             if (error || !transfer.state) {
                                 OSErr cleanupError = releaseConnection(&serial, &transfer, &upload);
                                 connected = false;
                                 if (preferences) enableSettings(preferences, true);
-                                showConnectButton(dialog);
+                                showConnectButton(dialog, &config);
                                 if (cleanupError) {
                                     sprintf(status, "Retry limit reached; cleanup error %d.", cleanupError);
-                                    setText(dialog, 12, status);
+                                    setText(dialog, 12, status, &config);
                                 }
                                 break;
                             }
@@ -1174,17 +1229,17 @@ int main(void)
                         connected = false;
                         awaitingDirectory = false;
                         if (preferences) enableSettings(preferences, true);
-                        showConnectButton(dialog);
-                        setText(dialog, 12, status);
+                        showConnectButton(dialog, &config);
+                        setText(dialog, 12, status, &config);
                         wideReset(&parser);
                         break;
                     } else if (result == WIDE_PING) {
-                        setText(dialog, 12, "Apple II ping received.");
+                        setText(dialog, 12, "Apple II ping received.", &config);
                     }
                 }
                 if (!connected) continue;
                 if (count && !parser.state && !commands)
-                    { sprintf(status, "Receiving serial data: %lu bytes.", received); setText(dialog, 12, status); }
+                    { sprintf(status, "Receiving serial data: %lu bytes.", received); setText(dialog, 12, status, &config); }
                 if (upload.active &&
                     (unsigned long)(TickCount() - upload.lastActivity) > 18000) {
                     strcpy(upload.message,
@@ -1193,36 +1248,36 @@ int main(void)
                     connected = false;
                     awaitingDirectory = false;
                     if (preferences) enableSettings(preferences, true);
-                    showConnectButton(dialog);
-                    setText(dialog, 12, upload.message);
+                    showConnectButton(dialog, &config);
+                    setText(dialog, 12, upload.message, &config);
                     continue;
                 }
                 if (parser.state && (unsigned long)(TickCount() - lastByte) > 300) {
                     wideReset(&parser);
                     if (transfer.state) {
                         error = transferRetry(&transfer);
-                        setTransferStatus(dialog, &transfer);
+                        setTransferStatus(dialog, &transfer, &config);
                         if (!error && transfer.state) continue;
                     }
                     error = releaseConnection(&serial, &transfer, &upload);
                     connected = false;
                     awaitingDirectory = false;
                     if (preferences) enableSettings(preferences, true);
-                    showConnectButton(dialog);
+                    showConnectButton(dialog, &config);
                     if (error) sprintf(status, "Packet timeout. Transfer stopped; cleanup error %d.", error);
                     else strcpy(status, "Packet timeout. Transfer stopped and disconnected.");
-                    setText(dialog, 12, status);
+                    setText(dialog, 12, status, &config);
                     continue;
                 }
                 if (error) {
                     OSErr cleanupError = releaseConnection(&serial, &transfer, &upload);
                     connected = false;
                     if (preferences) enableSettings(preferences, true);
-                    showConnectButton(dialog);
+                    showConnectButton(dialog, &config);
                     if (cleanupError) {
                         sprintf(status, "Output error %d; cleanup error %d. Quit to retry.", error, cleanupError);
-                        setText(dialog, 12, status);
-                    } else setText(dialog, 12, "Serial output busy or failed. Disconnected.");
+                        setText(dialog, 12, status, &config);
+                    } else setText(dialog, 12, "Serial output busy or failed. Disconnected.", &config);
                 }
                 if (connected && transfer.state) {
                     char previous[128];
@@ -1231,33 +1286,45 @@ int main(void)
                     error = transferPoll(&transfer, &serial);
                     /* Discard any incomplete stale envelope before a new packet ACK. */
                     if (!wasWriting && serial.writing) wideReset(&parser);
-                    if (strcmp(previous, transfer.message)) setTransferStatus(dialog, &transfer);
+                    if (strcmp(previous, transfer.message)) setTransferStatus(dialog, &transfer, &config);
                     if (error || !transfer.state) {
                         { OSErr cleanupError = releaseConnection(&serial, &transfer, &upload);
                           if (cleanupError) error = cleanupError; }
                         connected = false;
                         if (preferences) enableSettings(preferences, true);
-                        showConnectButton(dialog);
+                        showConnectButton(dialog, &config);
                         if (error) sprintf(status, "Image transfer/cleanup error %d. Quit to retry.", error);
                         else snprintf(status, sizeof(status), "%s Disconnected.", transfer.message);
-                        setText(dialog, 12, status);
+                        setText(dialog, 12, status, &config);
                     }
                 }
                 if (!connected) continue;
                 if (awaitingDirectory && !serial.writing && (unsigned long)(TickCount() - ackStarted) > 900) {
                     awaitingDirectory = false;
-                    setText(dialog, 12, "No directory acknowledgement. Check baud rate, cable and handshaking.");
+                    setText(dialog, 12, "No directory acknowledgement. Check baud rate, cable and handshaking.", &config);
                 }
-                if ((unsigned long)(TickCount() - diagnosticTick) >= 30) {
+                if ((unsigned long)(TickCount() - diagnosticTick) >= 180) {
                     OSErr diagnosticError = serialDiagnostics(&serial);
                     diagnosticTick = TickCount();
-                    if (diagnosticError)
-                        sprintf(status, "RX: %lu TX: %ld  Status error: %d", received, serial.sentBytes, diagnosticError);
-                    else
+                    if (diagnosticError) {
+                        OSErr cleanupError = releaseConnection(&serial, &transfer, &upload);
+                        connected = false;
+                        awaitingDirectory = false;
+                        wideReset(&parser);
+                        if (preferences) enableSettings(preferences, true);
+                        showConnectButton(dialog, &config);
+                        if (cleanupError)
+                            sprintf(status, "Serial connection lost (Mac error %d); cleanup error %d.",
+                                    diagnosticError, cleanupError);
+                        else
+                            sprintf(status, "Serial connection lost (Mac error %d).", diagnosticError);
+                        setText(dialog, 12, status, &config);
+                    } else if (config.debugMode) {
                         sprintf(status, "RX: %lu TX: %ld  CTS: %s\rWrite: %s DTR: %s Errors: $%02X",
                             received, serial.sentBytes, serial.ctsHeld ? "blocked" : "not held",
                             serial.writing ? "pending" : "idle", serial.dtrHeld ? "yes" : "no", serial.driverErrors);
-                    setText(dialog, 15, status);
+                        setText(dialog, 15, status, &config);
+                    }
                 }
             }
         }

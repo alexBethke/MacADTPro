@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
-enum { IDLE, INITIAL_ACK, SEND_NEXT, PACKET_ACK, RESEND, FINAL_REPORT };
+enum { IDLE, INITIAL_ACK, SEND_NEXT, PACKET_ACK, RESEND };
 /* More forgiving than the desktop server on slow classic hardware. */
 #define MAX_PACKET_RETRIES 10
 #define ACK_TIMEOUT_TICKS 7200UL
@@ -45,7 +45,17 @@ OSErr transferCancel(ImageTransfer *t)
 {
     /* Stop the state machine even when the file close needs a later retry. */
     t->state = IDLE;
+    t->completed = false;
     OSErr error = imageClose(&t->image);
+    return error;
+}
+
+static OSErr transferComplete(ImageTransfer *t)
+{
+    OSErr error;
+    strcpy(t->message, "Image transfer completed and verified by Apple II.");
+    error = transferCancel(t);
+    if (!error) t->completed = true;
     return error;
 }
 
@@ -73,15 +83,6 @@ OSErr transferCommand(ImageTransfer *t, SerialConnection *s,
     unsigned end;
     OSErr error;
     *handled = false;
-    if (p->command == 0xd9 && t->state == FINAL_REPORT) {
-        *handled = true;
-        if (p->length == 1 && p->payload[0] == 0) {
-            strcpy(t->message, "Image transfer completed and verified by Apple II.");
-            return transferCancel(t);
-        }
-        strcpy(t->message, "Apple II reported errors after writing the disk.");
-        return transferCancel(t);
-    }
     if (p->command == 0xd8 && t->state) {
         *handled = true;
         strcpy(t->message, "Image transfer cancelled by Apple II.");
@@ -111,12 +112,7 @@ OSErr transferCommand(ImageTransfer *t, SerialConnection *s,
             t->lastActivity = TickCount();
             snprintf(t->message, sizeof(t->message), "Acknowledged block %u/%u. Packet retries: 0.",
                      t->block, t->image.blocks);
-            if (t->block == t->image.blocks) {
-                t->state = FINAL_REPORT;
-                t->lastActivity = TickCount();
-                strcpy(t->message, "All blocks acknowledged; waiting for Apple II final status.");
-                return noErr;
-            }
+            if (t->block == t->image.blocks) return transferComplete(t);
             t->state = SEND_NEXT;
         } else {
             char reason[64];
@@ -164,12 +160,6 @@ OSErr transferPoll(ImageTransfer *t, SerialConnection *s)
     OSErr error;
     if (!t->state) return noErr;
     if (s->writing) { t->lastActivity = TickCount(); return noErr; }
-    if (t->state == FINAL_REPORT) {
-        if ((unsigned long)(TickCount() - t->lastActivity) <= ACK_TIMEOUT_TICKS)
-            return noErr;
-        strcpy(t->message, "Timed out waiting for Apple II final status.");
-        return transferCancel(t);
-    }
     if (t->state == INITIAL_ACK || t->state == PACKET_ACK) {
         /* The client does not read another packet during physical disk writes.
          * Resending on silence here can put a duplicate in its next buffer. */

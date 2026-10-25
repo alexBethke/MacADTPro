@@ -7,9 +7,12 @@ typedef struct {
     short printerPort;
     short baudIndex;
     short imageWriterCable;
+    Boolean debugMode;
 } Preferences;
 
-enum { kPreferencesFileSize = 12 };
+enum { kPreferencesFileSize = 13 };
+
+#define kDebugModeOffset 10
 
 void preferencesDefaults(Preferences *preferences);
 Boolean preferencesDecode(Preferences *preferences,
