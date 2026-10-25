@@ -103,15 +103,21 @@ resource 'DITL' (131) {
 };
 
 resource 'DLOG' (129) {
-    {80, 86, 246, 406}, dBoxProc, invisible, noGoAway, 0, 129,
+    {58, 66, 294, 426}, dBoxProc, invisible, noGoAway, 0, 129,
     "About MacADT Pro", centerMainScreen
+};
+
+/* An empty color table keeps the system dialog colors but makes
+   GetNewDialog create a CGrafPort, allowing PlotIconID to select icl8. */
+resource 'dctb' (129) {
+    { }
 };
 
 resource 'DITL' (129) {
     {
-        {130, 174, 152, 306}, Button {enabled, "Apple ][ forever"};
+        {200, 208, 222, 340}, Button {enabled, "Apple ][ forever"};
         /* Replaced with mixed-font drawing code after GetNewDialog. */
-        {18, 20, 118, 300}, StaticText {disabled, ""};
+        {18, 20, 168, 340}, StaticText {disabled, ""};
         /* Replaced with the default-button frame before the dialog is shown. */
         {0, 0, 0, 0}, StaticText {disabled, ""};
     }

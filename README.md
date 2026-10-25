@@ -37,6 +37,10 @@ The build produces:
 `scripts/build.sh` can also regenerate the embedded rainbow PICT and run the
 configured build. See `scripts/README.md` for details.
 
+The versioned distribution disk is software-locked in its HFS volume metadata,
+so Classic Mac OS treats it as a locked master without requiring a read-only
+host file.
+
 The application requests 768 KB of preferred memory and 512 KB minimum.
 
 ## Using MacADTPro

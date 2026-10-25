@@ -36,6 +36,7 @@ add_custom_command(
     VERBATIM)
 add_custom_command(
     OUTPUT ${DISTRIBUTION_DISK}
+    COMMAND ${CMAKE_COMMAND} -E remove -f ${DISTRIBUTION_DISK}
     COMMAND ${CMAKE_COMMAND} -E copy MacADTPro.dsk ${DISTRIBUTION_DISK}
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/add_readme_to_disk.sh
             ${HMOUNT_EXECUTABLE} ${HCOPY_EXECUTABLE} ${HDEL_EXECUTABLE}
@@ -43,9 +44,11 @@ add_custom_command(
             ${CMAKE_CURRENT_BINARY_DIR}/${DISTRIBUTION_DISK}
             ${CMAKE_CURRENT_BINARY_DIR}/${DISTRIBUTION_MACBINARY}
             ${CMAKE_CURRENT_BINARY_DIR}/generated/ReadMe.txt
+    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/lock_hfs_volume.py
+            ${CMAKE_CURRENT_BINARY_DIR}/${DISTRIBUTION_DISK}
     DEPENDS MacADTPro_APPL MacADTPro.dsk ${DISTRIBUTION_MACBINARY}
             ${CMAKE_CURRENT_BINARY_DIR}/generated/ReadMe.txt
-            scripts/add_readme_to_disk.sh
+            scripts/add_readme_to_disk.sh scripts/lock_hfs_volume.py
     VERBATIM)
 add_custom_target(MacADTPro_distribution ALL
                   DEPENDS ${DISTRIBUTION_MACBINARY} ${DISTRIBUTION_DISK})

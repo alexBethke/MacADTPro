@@ -10,6 +10,7 @@
 #include <OSUtils.h>
 #include <Processes.h>
 #include <Resources.h>
+#include <Icons.h>
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
@@ -112,28 +113,42 @@ static pascal void drawAboutText(DialogPtr dialog, short item)
 {
     static const unsigned char title[] =
         {10, 'M', 'a', 'c', 'A', 'D', 'T', ' ', 'P', 'r', 'o'};
+    static const char version[] = "Version " MACADTPRO_VERSION;
     static const char body[] =
-        "Version " MACADTPRO_VERSION ". Classic Macintosh host for ADTPro disk image transfers. "
+        "Classic Macintosh host for ADTPro disk image transfers. "
         "This application runs on any Macintosh with a 68020 or better CPU "
         "and System 7.0 or later. It is not affiliated with the MacADT app, "
-        "provided as-is, without warranty of any kind. Use at your own risk. Built and provided in 2026 by Alexander Bethke.";
+        "provided as-is, without warranty of any kind. Use at your own risk.\r\r\xA9 2026 by Alexander Bethke\rhttps://github.com/alexBethke/MacADTPro";
     GrafPtr savedPort;
     short type;
     Handle handle;
-    Rect bounds, bodyBounds;
+    Rect bounds, textBounds, bodyBounds, iconBounds;
     GetDialogItem(dialog, item, &type, &handle, &bounds);
     GetPort(&savedPort);
     SetPort((GrafPtr)dialog);
     EraseRect(&bounds);
+    iconBounds.left = bounds.left;
+    iconBounds.top = bounds.top + 2;
+    iconBounds.right = iconBounds.left + 32;
+    iconBounds.bottom = iconBounds.top + 32;
+    PlotIconID(&iconBounds, kAlignAbsoluteCenter, kTransformNone, 128);
+    textBounds = bounds;
+    textBounds.left += 44;
     TextFace(0);
     TextFont(systemFont); /* Chicago on the target System 7 systems. */
     TextSize(12);
-    MoveTo(bounds.left, bounds.top + 14);
+    MoveTo(textBounds.left, textBounds.top + 14);
     DrawString(title);
-    bodyBounds = bounds;
+    bodyBounds = textBounds;
     bodyBounds.top += 26;
     TextFont(kFontIDGeneva);
     TextSize(9);
+    TextFace(bold);
+    MoveTo(bodyBounds.left, bodyBounds.top + 9);
+    DrawText(version, 0, sizeof(version) - 1);
+    TextFace(0);
+    /* Leave one empty text line between the version and description. */
+    bodyBounds.top += 22;
     TETextBox(body, sizeof(body) - 1, &bodyBounds, teJustLeft);
     TextFont(systemFont);
     TextSize(12);
