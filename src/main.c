@@ -20,6 +20,7 @@
 #include "directory.h"
 #include "transfer.h"
 #include "preferences.h"
+#include "version.h"
 #include "upload.h"
 
 typedef struct {
@@ -39,7 +40,8 @@ enum {
     kMenuNone = 0,
     kMenuQuit = 1,
     kMenuPreferences = 2,
-    kMenuBootstrap = 3
+    kMenuBootstrap = 3,
+    kMenuAbout = 4
 };
 
 enum { kVisibleFiles = 128 };
@@ -111,7 +113,7 @@ static pascal void drawAboutText(DialogPtr dialog, short item)
     static const unsigned char title[] =
         {10, 'M', 'a', 'c', 'A', 'D', 'T', ' ', 'P', 'r', 'o'};
     static const char body[] =
-        "Classic Macintosh host for ADTPro disk image transfers. "
+        "Version " MACADTPRO_VERSION ". Classic Macintosh host for ADTPro disk image transfers. "
         "This application runs on any Macintosh with a 68020 or better CPU "
         "and System 7.0 or later. It is not affiliated with the MacADT app, "
         "provided as-is, without warranty of any kind. Use at your own risk. Built and provided in 2026 by Alexander Bethke.";
@@ -148,38 +150,23 @@ static void installAboutText(DialogPtr dialog)
                   (Handle)NewUserItemUPP(drawAboutText), &bounds);
 }
 
-static void showAbout(DialogPtr mainDialog, Boolean connectEnabled)
+static DialogPtr createAbout(void)
 {
-    WindowPtr previous = FrontWindow();
     DialogPtr about = GetNewDialog(129, 0, (WindowPtr)-1);
-    short type;
-    Handle handle;
-    Rect bounds;
-    short item = 0;
-    if (!about) return;
+    if (!about) return 0;
     installAboutText(about);
     installDefaultButton(about, 3);
     ShowWindow((WindowPtr)about);
     DrawDialog(about);
-    while (item != 1) ModalDialog(0, &item);
-    DisposeDialog(about);
-    if (previous) {
-        SelectWindow(previous);
-        SetPort((GrafPtr)previous);
-    }
-    GetDialogItem(mainDialog, 13, &type, &handle, &bounds);
-    HiliteControl((ControlHandle)handle, connectEnabled ? 0 : 255);
-    SetPort((GrafPtr)mainDialog);
-    drawDefaultButton(mainDialog, 18);
+    return about;
 }
 
-static short handleMenu(long choice, DialogPtr mainDialog, Boolean connectEnabled)
+static short handleMenu(long choice)
 {
     short menu = (short)(choice >> 16);
     short item = (short)choice;
     short action = kMenuNone;
-    if (menu == kAppleMenu && item == kAboutItem)
-        showAbout(mainDialog, connectEnabled);
+    if (menu == kAppleMenu && item == kAboutItem) action = kMenuAbout;
     else if (menu == kFileMenu && item == kPreferencesItem) action = kMenuPreferences;
     else if (menu == kFileMenu && item == kQuitItem) action = kMenuQuit;
     else if (menu == kBootstrapMenu && item == 1) action = kMenuBootstrap;
@@ -476,6 +463,21 @@ static void setTransferStatus(DialogPtr dialog, const ImageTransfer *transfer)
     setText(dialog, 12, transfer->message);
 }
 
+/* Keep the Control Manager state and the pixels in sync after another window
+   has covered the main dialog or a serial teardown has changed state. */
+static void showConnectButton(DialogPtr dialog)
+{
+    short type;
+    Handle handle;
+    Rect bounds;
+    setText(dialog, 13, "Connect");
+    GetDialogItem(dialog, 13, &type, &handle, &bounds);
+    SetPort((GrafPtr)dialog);
+    HiliteControl((ControlHandle)handle, 0);
+    Draw1Control((ControlHandle)handle);
+    drawDefaultButton(dialog, 18);
+}
+
 static void drawPreferenceGeneva(DialogPtr dialog)
 {
     static const short controls[] = {4, 5, 7, 8, 9, 10, 11};
@@ -599,6 +601,7 @@ int main(void)
     Configuration preferenceDraft;
     DialogPtr dialog;
     DialogPtr preferences = 0;
+    DialogPtr about = 0;
     Handle menuBar;
     short item;
     static SerialConnection serial;
@@ -608,8 +611,8 @@ int main(void)
     WideParser parser;
     EventRecord event;
     DialogPtr eventDialog;
-    Boolean connected = false, quit = false, quitRequested;
-    Boolean closePreferences, dispatchDialog;
+    Boolean connected = false, quit = false, quitRequested, releasedByActionClick;
+    Boolean closePreferences, closeAbout, dispatchDialog;
     short menuAction;
     unsigned long received = 0, commands = 0, lastByte = 0;
     unsigned char bytes[256];
@@ -679,7 +682,9 @@ int main(void)
         quitRequested = false;
         menuAction = kMenuNone;
         closePreferences = false;
+        closeAbout = false;
         dispatchDialog = true;
+        releasedByActionClick = false;
         if (WaitNextEvent(everyEvent, &event, connected ? 1 : 6, 0)) {
             if (event.what == activateEvt && (WindowPtr)event.message == (WindowPtr)dialog &&
                 (event.modifiers & activeFlag) && !folderError) {
@@ -707,14 +712,16 @@ int main(void)
                 TextSize(12);
             }
             if (event.what == keyDown && (event.modifiers & cmdKey)) {
-                menuAction = handleMenu(MenuKey(event.message & charCodeMask),
-                                        dialog, !folderError);
+                menuAction = handleMenu(MenuKey(event.message & charCodeMask));
                 dispatchDialog = false;
             } else if (event.what == keyDown &&
                        ((event.message & charCodeMask) == '\r' ||
                         (event.message & charCodeMask) == 3)) {
                 if (FrontWindow() == (WindowPtr)preferences && preferences) {
                     eventDialog = preferences;
+                    item = 1;
+                } else if (FrontWindow() == (WindowPtr)about && about) {
+                    eventDialog = about;
                     item = 1;
                 } else if (FrontWindow() == (WindowPtr)dialog) {
                     eventDialog = dialog;
@@ -726,8 +733,7 @@ int main(void)
                 WindowPtr clickedWindow;
                 short part = FindWindow(event.where, &clickedWindow);
                 if (part == inMenuBar) {
-                    menuAction = handleMenu(MenuSelect(event.where),
-                                            dialog, !folderError);
+                    menuAction = handleMenu(MenuSelect(event.where));
                     dispatchDialog = false;
                 }
                 if (part == inGoAway && clickedWindow == (WindowPtr)dialog) {
@@ -738,14 +744,46 @@ int main(void)
                     if (TrackGoAway(clickedWindow, event.where)) closePreferences = true;
                     dispatchDialog = false;
                 }
+                if (part == inGoAway && clickedWindow == (WindowPtr)about) {
+                    if (TrackGoAway(clickedWindow, event.where)) closeAbout = true;
+                    dispatchDialog = false;
+                }
                 if (part == inDrag && (clickedWindow == (WindowPtr)dialog ||
-                                       clickedWindow == (WindowPtr)preferences)) {
+                                       clickedWindow == (WindowPtr)preferences ||
+                                       clickedWindow == (WindowPtr)about)) {
                     DragWindow(clickedWindow, event.where, &qd.screenBits.bounds);
                     dispatchDialog = false;
                 }
                 if (part == inSysWindow) {
                     SystemClick(&event, clickedWindow);
                     dispatchDialog = false;
+                }
+                if (part == inContent && clickedWindow == (WindowPtr)dialog && connected) {
+                    short type;
+                    Handle handle;
+                    Rect bounds;
+                    Point local = event.where;
+                    SetPort((GrafPtr)dialog);
+                    GlobalToLocal(&local);
+                    GetDialogItem(dialog, 13, &type, &handle, &bounds);
+                    if (PtInRect(local, &bounds)) {
+                        /* DialogSelect enters modal control tracking before it
+                           returns the button item. Release the serial drivers
+                           first so a pending asynchronous write cannot leave
+                           the action button and port stuck until its timeout. */
+                        connected = false;
+                        awaitingDirectory = false;
+                        wideReset(&parser);
+                        bootstrapCancel(&bootstrap);
+                        if (preferences) enableSettings(preferences, true);
+                        showConnectButton(dialog);
+                        error = releaseConnection(&serial, &transfer, &upload);
+                        releasedByActionClick = true;
+                        if (error) {
+                            sprintf(status, "Disconnect cleanup error %d. Click Connect to retry.", error);
+                            setText(dialog, 12, status);
+                        } else setText(dialog, 12, "Disconnected.");
+                    }
                 }
                 if (part == inContent && clickedWindow == (WindowPtr)dialog && folderList) {
                     Point local = event.where;
@@ -790,13 +828,29 @@ int main(void)
                 EndUpdate((WindowPtr)preferences);
                 dispatchDialog = false;
             }
+            if (event.what == updateEvt &&
+                (WindowPtr)event.message == (WindowPtr)about) {
+                SetPort((GrafPtr)about);
+                BeginUpdate((WindowPtr)about);
+                DrawDialog(about);
+                EndUpdate((WindowPtr)about);
+                dispatchDialog = false;
+            }
             if (dispatchDialog && IsDialogEvent(&event)) DialogSelect(&event, &eventDialog, &item);
         }
         if (closePreferences) {
             DisposeDialog(preferences);
             preferences = 0;
         }
+        if (closeAbout) {
+            DisposeDialog(about);
+            about = 0;
+        }
         if (menuAction == kMenuQuit) quitRequested = true;
+        if (menuAction == kMenuAbout) {
+            if (!about) about = createAbout();
+            else SelectWindow((WindowPtr)about);
+        }
         if (menuAction == kMenuPreferences) {
             if (!preferences) {
                 preferenceDraft = config;
@@ -872,6 +926,11 @@ int main(void)
             }
             item = 0;
         }
+        if (eventDialog == about && about && item == 1) {
+            DisposeDialog(about);
+            about = 0;
+            item = 0;
+        }
         /* Stop polling/dispatching as soon as Quit is selected. */
         if (quitRequested) {
             bootstrapCancel(&bootstrap);
@@ -882,13 +941,14 @@ int main(void)
                 sprintf(status, "Serial close failed (Mac error %d). Quit again to retry.", error);
                 setText(dialog, 12, status);
                 if (preferences) enableSettings(preferences, true);
-                setText(dialog, 13, "Connect");
+                showConnectButton(dialog);
                 continue;
             }
             quit = true;
             break;
         }
-        if (item == 13 && (!folderError || bootstrapActive(&bootstrap))) {
+        if (item == 13 && (!folderError || bootstrapActive(&bootstrap)) &&
+            !releasedByActionClick) {
             if (connected) {
                 bootstrapCancel(&bootstrap);
                 error = releaseConnection(&serial, &transfer, &upload);
@@ -932,7 +992,7 @@ int main(void)
                 bootstrapCancel(&bootstrap);
                 connected = false;
                 if (preferences) enableSettings(preferences, true);
-                setText(dialog, 13, "Connect");
+                showConnectButton(dialog);
                 setText(dialog, 12, status);
             } else {
                 for (n = 0; n < count; ++n) {
@@ -950,7 +1010,7 @@ int main(void)
                                                                    &upload);
                             connected = false;
                             if (preferences) enableSettings(preferences, true);
-                            setText(dialog, 13, "Connect");
+                            showConnectButton(dialog);
                             if (cleanupError && !error) error = cleanupError;
                         }
                         if (error || !connected) break;
@@ -992,19 +1052,12 @@ int main(void)
                                     highlightFolderImage(dialog, transfer.imageName);
                                 if ((wasActive && !transfer.state) ||
                                     (wasUploadActive && !upload.active)) {
-                                    Boolean successful = uploadHandled
-                                        ? strstr(upload.message, "completed") != 0
-                                        : strstr(transfer.message, "completed") != 0;
                                     if (wasUploadActive && !upload.active && !error)
                                         refreshFolderList(dialog, &config.imageFolder);
-                                    if (successful && !error) {
-                                        setText(dialog, 13, "Disconnect");
-                                        continue;
-                                    }
                                     error = releaseConnection(&serial, &transfer, &upload);
                                     connected = false;
                                     if (preferences) enableSettings(preferences, true);
-                                    setText(dialog, 13, "Connect");
+                                    showConnectButton(dialog);
                                     if (error) {
                                         sprintf(status, "Transfer stopped; cleanup error %d. Quit to retry.", error);
                                         setText(dialog, 12, status);
@@ -1076,7 +1129,7 @@ int main(void)
                                 OSErr cleanupError = releaseConnection(&serial, &transfer, &upload);
                                 connected = false;
                                 if (preferences) enableSettings(preferences, true);
-                                setText(dialog, 13, "Connect");
+                                showConnectButton(dialog);
                                 if (cleanupError) {
                                     sprintf(status, "Retry limit reached; cleanup error %d.", cleanupError);
                                     setText(dialog, 12, status);
@@ -1106,7 +1159,7 @@ int main(void)
                         connected = false;
                         awaitingDirectory = false;
                         if (preferences) enableSettings(preferences, true);
-                        setText(dialog, 13, "Connect");
+                        showConnectButton(dialog);
                         setText(dialog, 12, status);
                         wideReset(&parser);
                         break;
@@ -1125,7 +1178,7 @@ int main(void)
                     connected = false;
                     awaitingDirectory = false;
                     if (preferences) enableSettings(preferences, true);
-                    setText(dialog, 13, "Connect");
+                    showConnectButton(dialog);
                     setText(dialog, 12, upload.message);
                     continue;
                 }
@@ -1140,7 +1193,7 @@ int main(void)
                     connected = false;
                     awaitingDirectory = false;
                     if (preferences) enableSettings(preferences, true);
-                    setText(dialog, 13, "Connect");
+                    showConnectButton(dialog);
                     if (error) sprintf(status, "Packet timeout. Transfer stopped; cleanup error %d.", error);
                     else strcpy(status, "Packet timeout. Transfer stopped and disconnected.");
                     setText(dialog, 12, status);
@@ -1150,7 +1203,7 @@ int main(void)
                     OSErr cleanupError = releaseConnection(&serial, &transfer, &upload);
                     connected = false;
                     if (preferences) enableSettings(preferences, true);
-                    setText(dialog, 13, "Connect");
+                    showConnectButton(dialog);
                     if (cleanupError) {
                         sprintf(status, "Output error %d; cleanup error %d. Quit to retry.", error, cleanupError);
                         setText(dialog, 12, status);
@@ -1169,7 +1222,7 @@ int main(void)
                           if (cleanupError) error = cleanupError; }
                         connected = false;
                         if (preferences) enableSettings(preferences, true);
-                        setText(dialog, 13, "Connect");
+                        showConnectButton(dialog);
                         if (error) sprintf(status, "Image transfer/cleanup error %d. Quit to retry.", error);
                         else snprintf(status, sizeof(status), "%s Disconnected.", transfer.message);
                         setText(dialog, 12, status);
@@ -1196,6 +1249,7 @@ int main(void)
     } while (!quit);
 
     if (preferences) DisposeDialog(preferences);
+    if (about) DisposeDialog(about);
     if (folderList) LDispose(folderList);
     ClosePort(&statusPort);
     DisposeDialog(dialog);

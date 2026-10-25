@@ -1,0 +1,21 @@
+#include "Types.r"
+
+resource 'vers' (1) {
+    0x@PROJECT_VERSION_MAJOR@,
+    0x@PROJECT_VERSION_MINOR@0,
+    release,
+    0x00,
+    verUS,
+    "@PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@",
+    "MacADTPro @PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@"
+};
+
+resource 'vers' (2) {
+    0x@PROJECT_VERSION_MAJOR@,
+    0x@PROJECT_VERSION_MINOR@0,
+    release,
+    0x00,
+    verUS,
+    "@PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@",
+    "MacADTPro @PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@"
+};

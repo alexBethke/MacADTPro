@@ -1,0 +1,25 @@
+MacADTPro @PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@
+===============
+
+MacADTPro is a native application for transferring Apple II disk images from
+a classic Macintosh with the ADTPro 2.1.0 Wide protocol. It requires a
+68020-or-newer Macintosh running System 7.0 or later.
+
+Quick start
+-----------
+
+1. Put disk images in a folder named "disks" beside MacADTPro. The application
+   creates this folder automatically when it first starts.
+2. Open File > Preferences and select the Macintosh serial port, transfer
+   speed, and cable type.
+3. Click Connect, then use Send or Receive in the ADTPro client on the Apple II.
+
+Supported images are ProDOS-order .po files and DOS-order .dsk or .do files.
+The Macintosh and Apple II must use the same baud rate.
+
+The Bootstrap menu can load the bundled ADTPro 2.1.0 client into Apple II
+memory. Follow the instructions shown by MacADTPro before clicking Send.
+
+MacADTPro is provided as-is, without warranty. See the project README and
+LICENSE in the source distribution for complete documentation and license
+terms.

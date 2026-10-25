@@ -1,6 +1,6 @@
 # MacADTPro
 
-MacADTPro is a native classic Macintosh host for transferring Apple II disk
+MacADTPro 0.1 is a native classic Macintosh host for transferring Apple II disk
 images with the ADTPro 2.1.0 Wide protocol. It is built with Retro68 and targets
 68020-or-newer Macs running System 7.0 or later.
 
@@ -29,8 +29,9 @@ cmake --build build
 
 The build produces:
 
-- `build/MacADTPro.bin`: MacBinary application;
-- `build/MacADTPro.dsk`: emulator/transfer disk image; and
+- `build/MacADTPro-0.1.bin`: versioned MacBinary application with Finder icon;
+- `build/MacADTPro.dsk`: development emulator/transfer disk image;
+- `build/MacADTPro-0.1.dsk`: versioned distribution disk with a Read Me; and
 - `build/disks/ADTPRO-2.1.0.DSK`: the bundled ADTPro boot-disk image.
 
 `scripts/build.sh` can also regenerate the embedded rainbow PICT and run the
@@ -62,10 +63,11 @@ Preferences are locked while connected.
 
 Click **Connect**, then choose Receive in the Apple II ADTPro client. Select an
 image from the client directory or enter its name and choose the destination
-disk. After a successful transfer, the serial connection remains open for
-another operation. Cancellation, timeout, or error releases the serial port.
-The same button changes to Disconnect while a connection is active. Clicking
-or interacting with the main window does not disconnect the session.
+disk. A completed, cancelled, timed-out, or failed transfer releases the serial
+port and returns the button to Connect. Click Connect before starting another
+operation. The button says Disconnect only while a connection is active.
+Clicking or interacting elsewhere in the main window does not disconnect the
+session.
 
 To copy a disk from the Apple II to the Macintosh, choose Send in the Apple II
 client, enter a destination name, and select the source disk. MacADTPro refuses

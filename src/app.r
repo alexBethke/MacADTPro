@@ -1,6 +1,8 @@
 #include "Dialogs.r"
 #include "Menus.r"
 #include "Processes.r"
+#include "Types.r"
+#include "SysTypes.r"
 
 resource 'DLOG' (128) {
     {40, 66, 364, 446}, noGrowDocProc, visible, goAway, 0, 128,
@@ -64,6 +66,23 @@ resource 'MBAR' (128) {
     { 128, 129, 130 };
 };
 
+/* Finder bundle mapping. The signature matches the MADP creator code passed
+   to Retro68's add_application() in CMakeLists.txt. */
+type 'MADP' as 'STR ';
+resource 'MADP' (0) { "MacADTPro" };
+
+resource 'BNDL' (128) {
+    'MADP', 0,
+    {
+        'ICN#', { 0, 128 },
+        'FREF', { 0, 128 }
+    }
+};
+
+resource 'FREF' (128) {
+    'APPL', 0, ""
+};
+
 resource 'DLOG' (131) {
     {10, 58, 370, 422}, dBoxProc, visible, noGoAway, 0, 131,
     "Serial Bootstrap", centerMainScreen
@@ -90,7 +109,7 @@ resource 'DLOG' (129) {
 
 resource 'DITL' (129) {
     {
-        {130, 174, 152, 306}, Button {enabled, "Apple ][ forever!"};
+        {130, 174, 152, 306}, Button {enabled, "Apple ][ forever"};
         /* Replaced with mixed-font drawing code after GetNewDialog. */
         {18, 20, 118, 300}, StaticText {disabled, ""};
         /* Replaced with the default-button frame before the dialog is shown. */
