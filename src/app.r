@@ -103,7 +103,7 @@ resource 'DITL' (131) {
 };
 
 resource 'DLOG' (129) {
-    {34, 66, 318, 426}, dBoxProc, invisible, noGoAway, 0, 129,
+    {34, 46, 318, 446}, dBoxProc, invisible, noGoAway, 0, 129,
     "About MacADT Pro", centerMainScreen
 };
 
@@ -115,9 +115,9 @@ resource 'dctb' (129) {
 
 resource 'DITL' (129) {
     {
-        {248, 208, 270, 340}, Button {enabled, "Apple ][ forever"};
+        {248, 248, 270, 380}, Button {enabled, "Apple ][ forever"};
         /* Replaced with mixed-font drawing code after GetNewDialog. */
-        {18, 20, 216, 340}, StaticText {disabled, ""};
+        {18, 20, 216, 380}, StaticText {disabled, ""};
         /* Replaced with the default-button frame before the dialog is shown. */
         {0, 0, 0, 0}, StaticText {disabled, ""};
     }

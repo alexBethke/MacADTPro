@@ -20,6 +20,9 @@ The Macintosh and Apple II must use the same baud rate.
 The Bootstrap menu can load the bundled ADTPro 2.1.0 client into Apple II
 memory. Follow the instructions shown by MacADTPro before clicking Send.
 
+If you would like to support the continued development of MacADT Pro,
+voluntary contributions are welcome via https://paypal.me/Bethke918
+
 MacADTPro is provided as-is, without warranty. See the project README and
 LICENSE in the source distribution for complete documentation and license
 terms.
