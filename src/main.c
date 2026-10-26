@@ -119,7 +119,11 @@ static pascal void drawAboutText(DialogPtr dialog, short item)
         "Classic Macintosh host for ADTPro disk image transfers. "
         "This application runs on any Macintosh with a 68020 or better CPU "
         "and System 7.0 or later. It is not affiliated with the MacADT app, "
-        "provided as-is, without warranty of any kind. Use at your own risk.\r\r\xA9 2026 by Alexander Bethke\rhttps://github.com/alexBethke/MacADTPro";
+        "provided as-is, without warranty of any kind. Use at your own risk."
+        "\r\r\xA9 2026 by Alexander Bethke"
+        "\rhttps://github.com/alexBethke/MacADTPro"
+        "\r\rSupport continued development with a voluntary contribution:"
+        "\rhttps://paypal.me/Bethke918";
     GrafPtr savedPort;
     short type;
     Handle handle;

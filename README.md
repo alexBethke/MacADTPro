@@ -43,6 +43,9 @@ host file.
 
 The application requests 768 KB of preferred memory and 512 KB minimum.
 
+If you would like to support the continued development of MacADT Pro,
+voluntary contributions are welcome via [PayPal](https://paypal.me/Bethke918).
+
 ## Using MacADTPro
 
 Place supported images in a folder named `disks` beside the application. The
