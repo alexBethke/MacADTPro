@@ -29,15 +29,15 @@ cmake --build build
 
 The build produces:
 
-- `build/MacADTPro-0.1.bin`: versioned MacBinary application with Finder icon;
 - `build/MacADTPro.dsk`: development emulator/transfer disk image;
-- `build/MacADTPro-0.1.dsk`: versioned distribution disk with a Read Me; and
+- `build/MacADTPro-0.1.dsk`: versioned release disk with the application and a
+  Read Me; and
 - `build/disks/ADTPRO-2.1.0.DSK`: the bundled ADTPro boot-disk image.
 
 `scripts/build.sh` can also regenerate the embedded rainbow PICT and run the
 configured build. See `scripts/README.md` for details.
 
-The versioned distribution disk is software-locked in its HFS volume metadata,
+The versioned release disk is software-locked in its HFS volume metadata,
 so Classic Mac OS treats it as a locked master without requiring a read-only
 host file.
 
